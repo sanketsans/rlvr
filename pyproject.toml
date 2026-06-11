@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwen3-rlvr"
+version = "0.1.0"
+description = "RLVR learning lab for Qwen3-4B-Instruct (GRPO on GSM8K and beyond)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "omegaconf",
+    "datasets",
+    "tqdm",
+    "wandb",
+    "sympy",
+    "rich",
+    "transformers>=4.51.0",
+    "accelerate",
+    "torch",
+    "huggingface_hub",
+    "psutil",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+eval = [
+    "lm-eval",
+]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,44 @@
+# Phase 1 debug — GSM8K-only GRPO on Qwen3-4B-Instruct
+# Override paths via env: MODEL_PATH, OUT_ROOT
+
+model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen3-4B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen3_rlvr_p1_grpo_gsm8k_debug
+
+dataset:
+  name: gsm8k
+  split: train
+  max_samples: null  # null = full train set; set 500 for quick debug
+
+grpo:
+  max_steps: 200
+  batch_size: 2          # questions per step
+  n_generations: 4       # completions per question (N in GRPO)
+  lr: 1.0e-6
+  kl_coef: 0.04
+  temperature: 0.7
+  max_new_tokens: 256
+  grad_clip: 1.0
+  dtype: bfloat16
+
+reward:
+  type: exact_match
+  extract: gsm8k_hash   # parse #### answer
+
+eval:
+  every_steps: 50
+  dataset: gsm8k
+  split: test
+  max_samples: 100
+  k: [1, 8]
+
+logging:
+  log_every_steps: 10
+  log_samples_every: 50
+  sample_table_size: 8
+  wandb:
+    project: qwen3-rlvr
+    entity: ${oc.env:WANDB_ENTITY,null}
+    name: qwen3_rlvr_p1_grpo_gsm8k_debug
+    tags: [phase1, gsm8k, grpo, debug, qwen3-4b]
+
+seed: 42

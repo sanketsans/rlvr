@@ -1,0 +1,27 @@
+# Phase 0 — Pass@K baseline on Qwen3-4B-Instruct
+
+model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen3-4B-Base}
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen3_rlvr_p0_passk_gsm8k_baseline
+
+dataset:
+  name: gsm8k
+  split: test
+  max_samples: null # null
+
+passk:
+  k: [1, 3, 5]
+  n_generations: 5
+  temperature: 0.7
+  max_new_tokens: 512
+  dtype: bfloat16
+  method: unbiased  # unbiased (standard) or first_k
+  question_batch_size: 8  # prompts per forward pass; increase until GPU ~80-90%
+
+logging:
+  wandb:
+    project: RLVR
+    entity: ${oc.env:WANDB_ENTITY,null}
+    name: qwen3_rlvr_p0_passk_gsm8k_baseline
+    tags: [phase0, passk, gsm8k, qwen3-4b]
+
+seed: 42
