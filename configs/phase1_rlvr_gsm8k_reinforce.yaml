@@ -1,0 +1,48 @@
+# Phase 1 reinforce — GSM8K-only GRPO on Qwen3-4B-Instruct
+# Override paths via env: MODEL_PATH, OUT_ROOT
+
+model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_reinforce
+
+dataset:
+  name: gsm8k
+  split: train
+  max_samples: null  # null = full train set; set 500 for quick debug
+
+grpo:
+  reinforce: true
+  max_steps: 10
+  batch_size: 4          # questions per step
+  n_generations: 10       # completions per question (N in GRPO)
+  lr: 1.0e-6
+  kl_coef: 0.04
+  temperature: 0.7
+  max_new_tokens: 512
+  grad_clip: 1.0
+  dtype: bfloat16
+  save_every_steps: 50
+
+reward:
+  type: exact_match
+  extract: gsm8k_hash   # parse #### answer
+
+eval:
+  every_steps: 20
+  dataset: gsm8k
+  split: test
+  max_samples: 200
+  max_new_tokens: 512
+  n_generations: 5
+  k: [1, 3, 5]
+
+logging:
+  log_every_steps: 5
+  log_samples_every: 50
+  sample_table_size: 8
+  wandb:
+    project: rlvr
+    entity: ${oc.env:WANDB_ENTITY,null}
+    name: qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_reinforce
+    tags: [phase1, gsm8k, reinforce, qwen2.5-0.5b-instruct]
+
+seed: 42

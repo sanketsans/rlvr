@@ -118,7 +118,7 @@ def main() -> None:
         log_pass_at_k_to_wandb(
             result=result,
             project=wandb_cfg["project"],
-            name=args.wandb_run or wandb_cfg.get("name", "pass_at_k"),
+            name=args.wandb_run or wandb_cfg.get("name", "pass_at_k") + f"_max_samples_{args.max_samples}",
             entity=wandb_cfg.get("entity"),
             tags=wandb_cfg.get("tags"),
         )

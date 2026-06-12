@@ -5,7 +5,7 @@ set -euo pipefail
 # 1. Validate that exactly one argument is passed
 if [ "$#" -ne 1 ]; then
     echo "Error: Missing argument." >&2
-    echo "Usage: $0 [base|instruct]" >&2
+    echo "Usage: $0 [base|instruct|0.5b-instruct]" >&2
     exit 1
 fi
 
@@ -21,6 +21,9 @@ if [ "${VARIANT}" = "base" ]; then
 elif [ "${VARIANT}" = "instruct" ]; then
     MODEL_ID="Qwen/Qwen3-4B-Instruct-2507"
     OUT_DIR="${ROOT}/models/Qwen3-4B-Instruct"
+elif [ "${VARIANT}" = "0.5b-instruct" ]; then
+    MODEL_ID="Qwen/Qwen2.5-0.5B-Instruct"
+    OUT_DIR="${ROOT}/models/Qwen2.5-0.5B-Instruct"
 else
     echo "Error: Invalid argument '${1}'." >&2
     echo "Must be either 'base' or 'instruct'." >&2

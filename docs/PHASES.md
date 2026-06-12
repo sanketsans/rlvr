@@ -113,10 +113,21 @@ sky jobs launch skypilot/phase1_grpo_debug.yaml \
 
 ## Phase 2 — Verify and visualize
 
-- Periodic GSM8K eval every `eval_every_steps`.
-- W&B sample tables: `early` / `mid` / `late`.
-- `scripts/make_progress_report.py` → HTML gallery.
-- Compare Phase 0 Pass@K vs post-RL.
+Built into the GRPO trainer (`scripts/train_grpo.py`):
+
+- Periodic GSM8K eval every `eval_every_steps` → `eval_step_<N>.json`
+- W&B sample tables tagged `early` / `mid` / `late`
+- `samples.jsonl` appended during training
+
+Offline HTML gallery:
+
+```bash
+python scripts/make_progress_report.py \
+  --samples outputs/qwen3_rlvr_p1_grpo_gsm8k_debug/samples.jsonl \
+  --output outputs/qwen3_rlvr_p1_grpo_gsm8k_debug/progress.html
+```
+
+Compare Phase 0 Pass@K vs post-RL using `scripts/pass_at_k.py` on `checkpoints/step_<N>/`.
 
 ---
 
