@@ -30,6 +30,7 @@ class TrainerConfig:
     max_samples: Optional[int] = None
     max_steps: int = 200
     batch_size: int = 2
+    grad_accum_steps: int = 1
     n_generations: int = 4
     lr: float = 1e-6
     kl_coef: float = 0.04
@@ -106,6 +107,7 @@ class GRPOTrainer:
         cfg = self.config
         device = self.policy.device
         metrics_history: List[dict] = []
+        self.optimizer.zero_grad()
 
         # eval_metrics = evaluate_gsm8k_quick(
         #     loaded=self.policy,
@@ -173,11 +175,14 @@ class GRPOTrainer:
             }
 
             if loss_metrics["num_loss_terms"] > 0:
-                self.optimizer.zero_grad()
-                loss.backward()
+                scaled_loss = loss / cfg.grad_accum_steps
+                scaled_loss.backward()
+
+            if step % cfg.grad_accum_steps == 0 or step == cfg.max_steps:
                 if cfg.grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(self.policy.model.parameters(), cfg.grad_clip)
                 self.optimizer.step()
+                self.optimizer.zero_grad()
 
             metrics_history.append(step_metrics)
 
@@ -193,7 +198,7 @@ class GRPOTrainer:
             if self.wandb is not None:
                 self.wandb.log_train(step_metrics, step=step)
 
-            if step % cfg.log_samples_every == 0:
+            if step == 1 or step % cfg.log_samples_every == 0:
                 stage = training_stage(step, cfg.max_steps)
                 records = []
                 for ex, prompt, comp_list, rew_row in zip(batch, prompts, completions, reward_rows):

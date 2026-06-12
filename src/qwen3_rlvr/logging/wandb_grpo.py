@@ -23,6 +23,9 @@ class GRPO_WandbLogger:
         if not os.getenv("WANDB_API_KEY"):
             raise RuntimeError("WANDB_API_KEY is not set. Add it to rlvr/.env")
         self.run = wandb.init(project=project, name=name, entity=entity, tags=tags, config=config)
+        self._samples_history = wandb.Table(
+            columns=["step", "stage", "example_id", "question", "ground_truth", "reward", "completion"]
+        )
 
     def log_train(self, metrics: dict, step: int) -> None:
         payload = {f"train/{k}": v for k, v in metrics.items() if k != "step"}
@@ -32,11 +35,11 @@ class GRPO_WandbLogger:
         wandb.log({f"eval/{k}": v for k, v in metrics.items()}, step=step)
 
     def log_samples(self, records: List[dict], step: int, stage: str) -> None:
-        table = wandb.Table(
-            columns=["stage", "example_id", "question", "ground_truth", "reward", "completion"]
-        )
+        columns = ["step", "stage", "example_id", "question", "ground_truth", "reward", "completion"]
+        snapshot = wandb.Table(columns=columns)
         for row in records:
-            table.add_data(
+            data = (
+                step,
                 stage,
                 row.get("example_id"),
                 (row.get("question") or "")[:200],
@@ -44,7 +47,15 @@ class GRPO_WandbLogger:
                 row.get("reward"),
                 (row.get("completion") or "")[:500],
             )
-        wandb.log({f"samples/{stage}": table}, step=step)
+            snapshot.add_data(*data)
+            self._samples_history.add_data(*data)
+        wandb.log(
+            {
+                f"samples/{stage}/step_{step:05d}": snapshot,
+                "samples/history": self._samples_history,
+            },
+            step=step,
+        )
 
     def finish(self) -> None:
         self.run.finish()

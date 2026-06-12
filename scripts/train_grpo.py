@@ -47,7 +47,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="GRPO training on GSM8K.")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--override", action="append", default=[], help="key=value OmegaConf override")
+    parser.add_argument("--output-dir", type=str, default=None, help="Override config output_dir")
     parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--grad-accum-steps", type=int, default=None)
+    parser.add_argument("--wandb-name", type=str, default=None)
+    parser.add_argument("--wandb-tags", type=str, default=None, help="Comma-separated W&B tags")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument(
         "--monitor-resources",
@@ -58,6 +64,8 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = _apply_overrides(_load_config(args.config), args.override)
+    if args.output_dir:
+        cfg["output_dir"] = args.output_dir
     grpo_cfg = _get(cfg, "grpo", default={}) or {}
     dataset_cfg = _get(cfg, "dataset", default={}) or {}
     eval_cfg = _get(cfg, "eval", default={}) or {}
@@ -70,9 +78,10 @@ def main() -> None:
         split=dataset_cfg.get("split", "train"),
         max_samples=dataset_cfg.get("max_samples"),
         max_steps=args.max_steps or grpo_cfg.get("max_steps", 200),
-        batch_size=grpo_cfg.get("batch_size", 2),
+        batch_size=args.batch_size or grpo_cfg.get("batch_size", 2),
+        grad_accum_steps=args.grad_accum_steps or grpo_cfg.get("grad_accum_steps", 1),
         n_generations=grpo_cfg.get("n_generations", 4),
-        lr=grpo_cfg.get("lr", 1e-6),
+        lr=args.lr if args.lr is not None else grpo_cfg.get("lr", 1e-6),
         kl_coef=grpo_cfg.get("kl_coef", 0.04),
         temperature=grpo_cfg.get("temperature", 0.7),
         max_new_tokens=grpo_cfg.get("max_new_tokens", 256),
@@ -92,8 +101,12 @@ def main() -> None:
         save_every_steps=grpo_cfg.get("save_every_steps", eval_cfg.get("every_steps", 50)),
         wandb_project=None if args.no_wandb else wandb_cfg.get("project"),
         wandb_entity=wandb_cfg.get("entity"),
-        wandb_name=wandb_cfg.get("name"),
-        wandb_tags=wandb_cfg.get("tags"),
+        wandb_name=args.wandb_name or wandb_cfg.get("name"),
+        wandb_tags=(
+            [t.strip() for t in args.wandb_tags.split(",") if t.strip()]
+            if args.wandb_tags
+            else wandb_cfg.get("tags")
+        ),
     )
 
     print(f"Training GRPO: {trainer_cfg.model_path}")

@@ -12,7 +12,8 @@ dataset:
 grpo:
   reinforce: true
   max_steps: 10
-  batch_size: 4          # questions per step
+  batch_size: 4          # questions per micro-batch
+  grad_accum_steps: 2    # micro-batches per optimizer step (effective bs = batch_size * grad_accum_steps)
   n_generations: 10       # completions per question (N in GRPO)
   lr: 1.0e-6
   kl_coef: 0.04
