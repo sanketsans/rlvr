@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
@@ -23,18 +23,23 @@ class LoadedModel:
     device: torch.device
 
 
+def _resolve_device(device: Optional[str] = None) -> str:
+    if device is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return device
+
+
 def load_model_and_tokenizer(
     model_path: str,
     dtype: str = "bfloat16",
     device: Optional[str] = None,
+    train: bool = False,
 ) -> LoadedModel:
     torch_dtype = DTYPE_MAP.get(dtype, torch.bfloat16)
+    device = _resolve_device(device)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
@@ -42,9 +47,24 @@ def load_model_and_tokenizer(
         device_map=device if device == "cuda" else None,
         trust_remote_code=True,
     )
-    if device != "cuda":
-        model = model.to(device)
-    model.eval()
+    if train:
+        model.train()
+    else:
+        model.eval()
 
     resolved = next(model.parameters()).device
     return LoadedModel(model=model, tokenizer=tokenizer, device=resolved)
+
+
+def load_policy_and_reference(
+    model_path: str,
+    dtype: str = "bfloat16",
+    device: Optional[str] = None,
+) -> Tuple[LoadedModel, LoadedModel]:
+    """Load trainable policy and frozen reference with identical init weights."""
+    device = _resolve_device(device)
+    policy = load_model_and_tokenizer(model_path, dtype=dtype, device=device, train=True)
+    reference = load_model_and_tokenizer(model_path, dtype=dtype, device=device, train=False)
+    for param in reference.model.parameters():
+        param.requires_grad = False
+    return policy, reference

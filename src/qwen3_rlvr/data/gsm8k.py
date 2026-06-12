@@ -33,7 +33,7 @@ def load_gsm8k(
     max_samples: Optional[int] = None,
     seed: int = 42,
 ) -> List[Gsm8kExample]:
-    dataset = load_dataset("gsm8k", "main", split=split)
+    dataset = load_dataset("openai/gsm8k", "main", split=split)
     if max_samples is not None and max_samples < len(dataset):
         dataset = dataset.shuffle(seed=seed).select(range(max_samples))
 

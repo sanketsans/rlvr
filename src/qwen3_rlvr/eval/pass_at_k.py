@@ -15,6 +15,8 @@ from tqdm import tqdm
 from itertools import islice
 
 from qwen3_rlvr.data.gsm8k import Gsm8kExample, load_gsm8k
+from qwen3_rlvr.generation.prompts import format_prompt
+from qwen3_rlvr.generation.rollout import generate_rollouts
 from qwen3_rlvr.model.load import LoadedModel, load_model_and_tokenizer
 from qwen3_rlvr.rewards.extract import answers_match, extract_answer
 
@@ -66,73 +68,6 @@ def batched(iterable, batch_size):
             break
         yield batch
 
-def _format_prompt(tokenizer, messages: Sequence[dict]) -> str:
-    kwargs = {
-        "tokenize": False,
-        "add_generation_prompt": True,
-    }
-    try:
-        return tokenizer.apply_chat_template(messages, enable_thinking=False, **kwargs)
-    except TypeError:
-        return tokenizer.apply_chat_template(messages, **kwargs)
-
-
-def _generate_completions(
-    loaded: LoadedModel,
-    prompts: List[str],
-    n_generations: int,
-    max_new_tokens: int,
-    temperature: float,
-    seed: int,
-) -> List[List[str]]:
-    tokenizer = loaded.tokenizer
-    model = loaded.model
-    device = loaded.device
-    batch_size = len(prompts)
-    torch.manual_seed(seed)
-
-    inputs = tokenizer(
-        prompts,                    # List[str]
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-    ).to(device)
-    input_len = inputs["input_ids"].shape[-1]
-
-    do_sample = temperature > 0
-    gen_kwargs = {
-        "num_return_sequences": n_generations,
-        # "temperature": temperature, # pass temp only when do_sample=True
-        "max_new_tokens": max_new_tokens,
-        "do_sample": do_sample,
-        "pad_token_id": tokenizer.pad_token_id,
-        "eos_token_id": tokenizer.eos_token_id,
-    }
-    if do_sample:
-        gen_kwargs["temperature"] = temperature
-
-    with torch.inference_mode():
-        outputs = model.generate(
-            **inputs,
-            **gen_kwargs,
-        )
-
-    completions = []
-
-    for prompt_idx in range(batch_size):
-        prompt_completions = []
-        for sample_idx in range(n_generations):
-            row = prompt_idx * n_generations + sample_idx
-            text = tokenizer.decode(
-                outputs[row, input_len:],
-                skip_special_tokens=True,
-            ).strip()
-            prompt_completions.append(text)
-        completions.append(prompt_completions)
-
-    return completions
-
-
 def compute_pass_at_k(correct_mask: Sequence[bool], k_values: Sequence[int], method: str = "unbiased") -> Dict[str, float]:
     n = len(correct_mask)
     c = sum(correct_mask)
@@ -172,8 +107,6 @@ def evaluate_pass_at_k(
     show_progress: bool = True,
     question_batch_size: int = 4,
 ) -> PassAtKResult:
-    if k_values is None:
-        k_values = [1, 8, 16]
     if n_generations < max(k_values):
         raise ValueError(
             f"n_generations={n_generations} must be >= max(k_values)={max(k_values)}"
@@ -190,15 +123,23 @@ def evaluate_pass_at_k(
         iterator = tqdm(examples, desc="Pass@K eval", unit="q")
 
     for batch_examples in batched(iterator, question_batch_size):
-        prompts = [_format_prompt(loaded.tokenizer, ex.messages) for ex in batch_examples]
-        completions = _generate_completions(
+        # prompts = [format_prompt(loaded.tokenizer, ex.messages) for ex in batch_examples]
+        _prompts, completions = generate_rollouts(
             loaded=loaded,
-            prompts=prompts,
+            examples=batch_examples,
             n_generations=n_generations,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             seed=seed,
         )
+        # prompts ,completions = _generate_completions(
+        #     loaded=loaded,
+        #     prompts=prompts,
+        #     n_generations=n_generations,
+        #     max_new_tokens=max_new_tokens,
+        #     temperature=temperature,
+        #     seed=seed,
+        # )
         correct_masks = [
             [answers_match(c, ex.answer) for c in c_list]
             for c_list, ex in zip(completions, batch_examples)

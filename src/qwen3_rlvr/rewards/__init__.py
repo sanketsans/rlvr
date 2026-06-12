@@ -1,3 +1,4 @@
-from qwen3_rlvr.rewards.extract import extract_answer, answers_match
+from qwen3_rlvr.rewards.extract import answers_match, extract_answer
+from qwen3_rlvr.rewards.exact_match import exact_match_rewards
 
-__all__ = ["extract_answer", "answers_match"]
+__all__ = ["answers_match", "exact_match_rewards", "extract_answer"]
