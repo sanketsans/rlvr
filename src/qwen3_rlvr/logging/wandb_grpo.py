@@ -42,10 +42,10 @@ class GRPO_WandbLogger:
                 step,
                 stage,
                 row.get("example_id"),
-                (row.get("question") or "")[:200],
+                (row.get("question") or ""),
                 row.get("ground_truth"),
                 row.get("reward"),
-                (row.get("completion") or "")[:500],
+                (row.get("completion") or ""),
             )
             snapshot.add_data(*data)
             self._samples_history.add_data(*data)
