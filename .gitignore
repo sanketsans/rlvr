@@ -9,3 +9,5 @@ models/
 wandb/
 tests/
 skypilot/
+docs/
+experiments/

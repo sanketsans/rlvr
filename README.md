@@ -1,163 +1,217 @@
-# Qwen3 RLVR Learning Lab
+# RLVR Learning Lab
 
-A phased, reproducible playground for **Reinforcement Learning from Verifiable Rewards (RLVR)** on **Qwen3-4B-Instruct**, starting with GSM8K and scaling to multi-domain training and verifier-guided selection.
+A phased playground for **Reinforcement Learning from Verifiable Rewards (RLVR)** on instruction-tuned LLMs, starting with GSM8K.
 
-This project is standalone under `Projects/qwen3_rlvr`. It uses **HuggingFace Transformers** for the base model (no Molmo2 / vision stack). All RLVR logic, configs, eval hooks, and SkyPilot launchers live here.
+**Current model:** [`Qwen/Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct) (vendored under `models/Qwen2.5-0.5B-Instruct/`). The codebase also supports larger Qwen checkpoints, but active experiments use the 0.5B model for fast iteration.
 
-## Goals
-
-1. Learn how RL post-training works end-to-end (not just call a black-box trainer).
-2. Measure **Pass@K** before RL, then verify RL is actually moving the needle.
-3. Log everything to **Weights & Biases** with interpretable stage-wise artifacts.
-4. Run locally (`conda` env `olmo`) then promote the same commands to **SkyPilot** on H200.
+**Current algorithm:** **REINFORCE** with group-normalized advantages. **GRPO** (PPO-style clipping + KL to a frozen reference policy) is stubbed in code but **not wired up yet** — that will be added in a follow-up.
 
 ## Prerequisites
 
-| Item | Location / command |
-|------|-------------------|
-| Base model (HF) | `models/Qwen3-4B-Instruct/` (see download below) |
-| HF model ID | `Qwen/Qwen3-4B-Instruct-2507` |
-| Local conda env | `olmo` |
-| W&B | `WANDB_API_KEY` |
-| HF cache | `HF_HOME` (optional; model is vendored under `models/`) |
+| Item | Notes |
+|------|-------|
+| Python env | `conda activate olmo` (or any env with `torch`, `transformers>=4.51`, `datasets`) |
+| Model weights | `models/Qwen2.5-0.5B-Instruct/` (see download below) |
+| W&B (optional) | Set `WANDB_API_KEY` in `rlvr/.env` or your shell |
+
+### Install
+
+```bash
+cd /home/coder/Projects/rlvr
+conda activate olmo
+pip install -e .
+```
+
+Optional eval extras: `pip install -e ".[eval]"` (for future lm-eval integration).
 
 ### One-time model download
 
 ```bash
-bash scripts/download_model.sh
-# or manually:
-# huggingface-cli download Qwen/Qwen3-4B-Instruct-2507 \
-#   --local-dir models/Qwen3-4B-Instruct
+bash scripts/download_model.sh 0.5b-instruct
 ```
 
-### Environment variables (reuse everywhere)
+### Environment variables
+
+Configs read `MODEL_PATH` and `OUT_ROOT` via OmegaConf env interpolation. Set them once per shell session (or put them in `rlvr/.env`):
 
 ```bash
-export RLVR_ROOT=/home/coder/Projects/qwen3_rlvr
-export MODEL_PATH=$RLVR_ROOT/models/Qwen3-4B-Instruct
+export RLVR_ROOT=/home/coder/Projects/rlvr
+export MODEL_PATH=$RLVR_ROOT/models/Qwen2.5-0.5B-Instruct
 export OUT_ROOT=$RLVR_ROOT/outputs
-export HF_HOME=$RLVR_ROOT/.cache/huggingface
-export WANDB_PROJECT=qwen3-rlvr
-export WANDB_ENTITY=<your-entity>
+export WANDB_ENTITY=<your-wandb-entity>   # optional
 ```
 
-## Architecture (high level)
+Training also auto-loads `rlvr/.env` via `qwen3_rlvr.env.load_project_env()`.
+
+## Project layout
 
 ```
-qwen3_rlvr/
-├── models/Qwen3-4B-Instruct/   # vendored HF weights
-├── configs/                    # YAML per phase / experiment
-├── src/qwen3_rlvr/             # Python package (data, rewards, GRPO, eval, logging)
-├── scripts/                    # pass@k, train, eval, download_model
-├── skypilot/                   # SkyPilot YAMLs
-├── experiments/                # Run registry
-└── docs/                       # Phase guides, design notes
+rlvr/
+├── configs/                 # YAML configs for eval + training
+├── models/                  # vendored HF weights (gitignored)
+├── outputs/                 # run artifacts (gitignored)
+├── scripts/                 # CLI entrypoints
+├── src/qwen3_rlvr/          # Python package
+├── docs/                    # local notes only (gitignored)
+└── experiments/             # local run registry only (gitignored)
 ```
 
-**Data flow (GRPO, Phase 1):**
+`docs/` and `experiments/` are kept on disk for local reference but are **not tracked in git** (see `.gitignore`).
+
+## Phase 0 — Pass@K evaluation
+
+Baseline **before** RL: sample `N` completions per GSM8K question and report Pass@K.
+
+### Using the config (recommended)
+
+```bash
+cd $RLVR_ROOT
+conda activate olmo
+
+python scripts/pass_at_k.py \
+  --config configs/phase0_passk.yaml \
+  --output-dir $OUT_ROOT/phase0_passk_gsm8k
+```
+
+Defaults in `configs/phase0_passk.yaml`:
+- split: `test`
+- `k`: `[1, 3, 5]`, `n_generations`: `5`
+- `question_batch_size`: `8` (tune up until GPU is ~80–90% utilized)
+
+### CLI overrides
+
+```bash
+python scripts/pass_at_k.py \
+  --config configs/phase0_passk.yaml \
+  --model $MODEL_PATH \
+  --split test \
+  --k 1,3,5 \
+  --n-generations 5 \
+  --max-samples 200 \
+  --question-batch-size 8 \
+  --output-dir $OUT_ROOT/my_passk_run \
+  --wandb-expt-name qwen25_p0_passk_smoke \
+  --monitor-resources
+```
+
+Use `--no-wandb` to skip W&B. Results are written to `<output-dir>/pass_at_k_summary.json`.
+
+### Example output
+
+```
+pass@1: 0.42xx
+pass@3: 0.58xx
+pass@5: 0.62xx
+Saved summary: outputs/.../pass_at_k_summary.json
+```
+
+## Phase 1 — REINFORCE training
+
+Group-sampled rollouts on GSM8K train, exact-match reward, advantage normalization, policy-gradient update.
+
+> **Note:** `scripts/train_grpo.py` and `GRPOTrainer` are named for the target algorithm, but **`grpo.reinforce: true` must be set** (as in the bundled config). Full GRPO (clipped ratio + KL penalty) is not enabled yet.
+
+### Using the config (recommended)
+
+```bash
+cd $RLVR_ROOT
+conda activate olmo
+
+python scripts/train_grpo.py \
+  --config configs/phase1_rlvr_gsm8k_reinforce.yaml \
+  --output-dir $OUT_ROOT/qwen25_p1_reinforce_gsm8k
+```
+
+Defaults in `configs/phase1_rlvr_gsm8k_reinforce.yaml`:
+- `max_steps`: `100`
+- `batch_size`: `4`, `grad_accum_steps`: `2` (effective 8 questions per optimizer step)
+- `n_generations`: `10` completions per question
+- `lr`: `1e-6`
+- in-loop GSM8K eval every `25` steps on 200 test examples
+
+### CLI overrides
+
+```bash
+python scripts/train_grpo.py \
+  --config configs/phase1_rlvr_gsm8k_reinforce.yaml \
+  --max-steps 50 \
+  --batch-size 2 \
+  --grad-accum-steps 1 \
+  --lr 1e-6 \
+  --wandb-name qwen25_p1_reinforce_debug \
+  --output-dir $OUT_ROOT/qwen25_p1_debug
+```
+
+OmegaConf dot-path overrides:
+
+```bash
+python scripts/train_grpo.py \
+  --config configs/phase1_rlvr_gsm8k_reinforce.yaml \
+  --override dataset.max_samples=500 \
+  --override grpo.n_generations=4
+```
+
+Use `--no-wandb` for a local-only run.
+
+### Training outputs
+
+Under `<output-dir>/`:
+
+| Artifact | Description |
+|----------|-------------|
+| `train_metrics.jsonl` | Per-step loss, reward, advantage stats |
+| `samples.jsonl` | Logged completions with rewards |
+| `eval_step_<N>.json` | Periodic GSM8K Pass@K during training |
+| `checkpoints/step_<N>/` | HF-format policy checkpoints |
+| `resource_monitor.json` | CPU/GPU sampling (always written by trainer) |
+
+### Phase 2 — progress report (optional)
+
+Build an HTML gallery from `samples.jsonl`:
+
+```bash
+python scripts/make_progress_report.py \
+  --samples $OUT_ROOT/qwen25_p1_reinforce_gsm8k/samples.jsonl \
+  --output $OUT_ROOT/qwen25_p1_reinforce_gsm8k/progress.html
+```
+
+## Training loop (REINFORCE)
 
 ```mermaid
 flowchart TD
-  Q[GSM8K question] --> G[Generate N completions]
-  G --> R[Reward: exact match vs GT]
-  R --> N[Normalize rewards per group]
-  N --> A[Compute advantages]
-  A --> U[Policy update]
-  U --> W[W&B + checkpoint]
-  W --> E[Periodic GSM8K eval]
+  Q[GSM8K question batch] --> G[Generate N completions per question]
+  G --> R[Reward: exact match vs #### answer]
+  R --> A[Group-normalize rewards → advantages]
+  A --> L["Policy loss: −advantage × log π(completion)"]
+  L --> U[AdamW step]
+  U --> E[Periodic GSM8K eval + W&B log]
 ```
 
-## Phased roadmap
-
-| Phase | Objective | Key metric | Doc |
-|-------|-----------|------------|-----|
-| **0** | Baseline Pass@K on Qwen3-4B-Instruct | Pass@1, Pass@8, Pass@16 | [docs/PHASES.md](docs/PHASES.md#phase-0--passk-baseline) |
-| **1** | Minimal GSM8K-only GRPO | train reward, loss | [docs/PHASES.md](docs/PHASES.md#phase-1--minimal-gsm8k-grpo) |
-| **2** | Prove RL is working + interpretability | GSM8K acc vs step, sample galleries | [docs/PHASES.md](docs/PHASES.md#phase-2--verify-and-visualize) |
-| **3** | Generalization via lm-eval-harness | GSM8K, MATH nearby, MMLU far | [docs/PHASES.md](docs/PHASES.md#phase-3--generalization-benchmarks) |
-| **4** | Multi-domain mixture (GSM8K 65%, Math 25%, …) | per-domain + aggregate | [docs/PHASES.md](docs/PHASES.md#phase-4--multi-domain-mixture) |
-| **5** | Verifier model + best-of-N selection | verifier accuracy, BoN gain | [docs/PHASES.md](docs/PHASES.md#phase-5--verifier--best-of-n) |
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for module design, GRPO math, and eval integration.
-
-## Implementation choices (decision record)
-
-### A. GRPO stack — **recommended: custom GRPO via Transformers**
-
-| Option | Pros | Cons |
-|--------|------|------|
-| **A. Transformers + custom GRPO** (default) | Full visibility; native HF checkpoints; works with `lm_eval` out of the box | More code to write |
-| B. TRL `GRPOTrainer` | Fast bootstrap | Less transparent internals |
-| C. verl / OpenRLHF | Production scale | Heavy; poor fit for a toy lab |
-
-### B. Eval stack — **recommended: in-project GSM8K + lm-eval-harness**
-
-| Layer | Tool | When |
-|-------|------|------|
-| Training-time GSM8K | `src/qwen3_rlvr/eval/gsm8k.py` | Every N optimizer steps (Phase 1–2) |
-| Pass@K | `scripts/pass_at_k.py` | Phase 0 |
-| Text benchmarks (GSM8K, MMLU, …) | `lm-eval` (`lm_eval` CLI) | Phase 3–4 |
-
-### C. SkyPilot runtime — **conda bootstrap + FSx volume**
-
-Matches local `olmo` env; no Molmo2 Docker required.
-
-## Quick start (local smoke test)
-
-```bash
-conda activate olmo
-cd $RLVR_ROOT && pip install -e ".[eval]"
-
-# Phase 0 — after implementation
-python scripts/pass_at_k.py \
-  --model $MODEL_PATH \
-  --dataset gsm8k \
-  --split test \
-  --k 1,8,16 \
-  --n-samples 500 \
-  --wandb-run qwen3_rlvr_p0_passk_gsm8k_baseline
-```
-
-## SkyPilot
-
-```bash
-sky jobs launch skypilot/phase1_grpo_debug.yaml \
-  --env WANDB_API_KEY=$WANDB_API_KEY \
-  --env EXP_NAME=qwen3_rlvr_p1_grpo_gsm8k_debug
-```
-
-## Experiment naming
-
-```
-qwen3_rlvr_<phase>_<dataset>_<knob>_<tag>
-```
-
-Examples:
-- `qwen3_rlvr_p0_passk_gsm8k_k16_baseline`
-- `qwen3_rlvr_p1_grpo_gsm8k_n8_lr1e6_run01`
-- `qwen3_rlvr_p4_mix_gsm65_math25_eval_mmlu`
-
-## W&B logging contract
+## W&B metrics
 
 | Group | Metrics |
 |-------|---------|
-| `train` | `loss`, `policy_loss`, `kl`, `reward_mean`, `reward_std`, `frac_correct` |
-| `grpo` | `advantage_mean`, `advantage_std`, `group_reward_spread` |
-| `eval/gsm8k` | `accuracy`, `pass@1`, `pass@k` (periodic) |
-| `samples` | Tables: question, completions, rewards, stage tag (`early`/`mid`/`late`) |
+| `train` | `loss`, `reward_mean`, `reward_std`, `frac_correct`, `advantage_mean`, `advantage_std`, `group_reward_spread` |
+| `loss/*` | `num_loss_terms`, `policy_logp_mean` |
+| `eval/gsm8k` | `pass@1`, `pass@k` (periodic) |
+| `samples` | Tables of question, completion, reward, stage |
 
-Checkpoints: `$OUT_ROOT/<exp_name>/checkpoints/step_<N>/` (standard HF format).
+## Roadmap
+
+| Phase | Status |
+|-------|--------|
+| 0 — Pass@K baseline | **Done** (`scripts/pass_at_k.py`) |
+| 1 — REINFORCE on GSM8K | **Done** (`scripts/train_grpo.py` + `configs/phase1_rlvr_gsm8k_reinforce.yaml`) |
+| 1b — GRPO (clip + KL) | **Planned** — code scaffold exists, not enabled |
+| 2 — Monitoring / viz | Partial (`make_progress_report.py`) |
+| 3+ — lm-eval harness, multi-domain | Planned |
 
 ## Status
 
 | Component | Status |
 |-----------|--------|
-| Plan + docs | Done |
-| Model download | See `models/Qwen3-4B-Instruct/` |
-| Phase 0 Pass@K eval | Done (`scripts/pass_at_k.py`) |
-| Phase 1 GRPO trainer | Planned |
-| SkyPilot YAMLs | Template only |
-
-## Next step
-
-Implement **Phase 0 → Phase 1** locally, then first SkyPilot launch.
+| Pass@K eval | Done |
+| REINFORCE trainer | Done |
+| GRPO trainer | Not enabled yet |
+| Batched log-prob forward | Done |
+| Local `docs/`, `experiments/` | Gitignored; kept locally only |
