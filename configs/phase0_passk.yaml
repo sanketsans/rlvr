@@ -1,7 +1,7 @@
 # Phase 0 — Pass@K baseline on Qwen3-4B-Instruct
 
 model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen2.5-0.5b-instruct_rlvr_p0_passk_gsm8k_baseline
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}
 
 dataset:
   name: gsm8k

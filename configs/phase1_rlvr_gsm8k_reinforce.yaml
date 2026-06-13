@@ -2,7 +2,7 @@
 # Override paths via env: MODEL_PATH, OUT_ROOT
 
 model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_reinforce
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}
 
 dataset:
   name: gsm8k
