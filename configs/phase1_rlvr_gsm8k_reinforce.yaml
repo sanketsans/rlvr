@@ -11,7 +11,7 @@ dataset:
 
 grpo:
   reinforce: true
-  max_steps: 10
+  max_steps: 100
   batch_size: 4          # questions per micro-batch
   grad_accum_steps: 2    # micro-batches per optimizer step (effective bs = batch_size * grad_accum_steps)
   n_generations: 10       # completions per question (N in GRPO)
@@ -28,7 +28,7 @@ reward:
   extract: gsm8k_hash   # parse #### answer
 
 eval:
-  every_steps: 20
+  every_steps: 25
   dataset: gsm8k
   split: test
   max_samples: 200
@@ -38,7 +38,7 @@ eval:
 
 logging:
   log_every_steps: 5
-  log_samples_every: 50
+  log_samples_every: 20
   sample_table_size: 8
   wandb:
     project: rlvr

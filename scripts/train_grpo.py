@@ -111,12 +111,12 @@ def main() -> None:
 
     print(f"Training GRPO: {trainer_cfg.model_path}")
     print(f"Output: {trainer_cfg.output_dir}")
-    if args.monitor_resources:
-        with ResourceMonitor(trainer_cfg.output_dir + "/resource_monitor.json", interval_s=args.monitor_interval, label="grpo") as monitor:
-            GRPOTrainer(trainer_cfg).train()
-        monitor.print_summary()
-    else:
+    # if args.monitor_resources:
+    with ResourceMonitor(trainer_cfg.output_dir + "/resource_monitor.json", interval_s=args.monitor_interval, label="grpo") as monitor:
         GRPOTrainer(trainer_cfg).train()
+    monitor.print_summary()
+    # else:
+    #     GRPOTrainer(trainer_cfg).train()
     print("Training complete.")
 
 

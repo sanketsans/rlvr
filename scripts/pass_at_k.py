@@ -52,7 +52,7 @@ def main() -> None:
     parser.add_argument("--method", type=str, default=None, choices=["unbiased", "first_k"])
     parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--wandb-run", type=str, default=None, help="W&B run name override")
+    parser.add_argument("--wandb-expt-name", type=str, default=None, help="W&B run name override")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument(
         "--monitor-resources",
@@ -118,7 +118,7 @@ def main() -> None:
         log_pass_at_k_to_wandb(
             result=result,
             project=wandb_cfg["project"],
-            name=args.wandb_run or wandb_cfg.get("name", "pass_at_k") + f"_max_samples_{args.max_samples}",
+            name=args.wandb_expt_name or wandb_cfg.get("name", "pass_at_k") + f"_max_samples_{args.max_samples}",
             entity=wandb_cfg.get("entity"),
             tags=wandb_cfg.get("tags"),
         )

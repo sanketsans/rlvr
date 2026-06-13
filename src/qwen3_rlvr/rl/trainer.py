@@ -109,23 +109,24 @@ class GRPOTrainer:
         metrics_history: List[dict] = []
         self.optimizer.zero_grad()
 
-        # eval_metrics = evaluate_gsm8k_quick(
-        #     loaded=self.policy,
-        #     split=cfg.eval_split,
-        #     max_samples=cfg.eval_max_samples,
-        #     n_generations=cfg.eval_n_generations,
-        #     k_values=cfg.eval_k,
-        #     max_new_tokens=cfg.eval_max_new_tokens,
-        #     temperature=cfg.temperature,
-        #     question_batch_size=cfg.batch_size,
-        #     seed=cfg.seed,
-        # )
-        # print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
-        # if self.wandb is not None:
-        #     self.wandb.log_eval(eval_metrics, step=0)
-        # eval_path = self.output_dir / f"eval_step_0.json"
-        # with eval_path.open("w", encoding="utf-8") as f:
-        #     json.dump(eval_metrics, f, indent=2)
+        eval_metrics = evaluate_gsm8k_quick(
+            loaded=self.policy,
+            split=cfg.eval_split,
+            max_samples=cfg.eval_max_samples,
+            n_generations=cfg.eval_n_generations,
+            k_values=cfg.eval_k,
+            max_new_tokens=cfg.eval_max_new_tokens,
+            temperature=cfg.temperature,
+            question_batch_size=cfg.batch_size,
+            seed=cfg.seed,
+        )
+        last_eval_metrics = eval_metrics
+        print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
+        if self.wandb is not None:
+            self.wandb.log_eval(eval_metrics, step=0)
+        eval_path = self.output_dir / f"eval_step_0.json"
+        with eval_path.open("w", encoding="utf-8") as f:
+            json.dump(eval_metrics, f, indent=2)
 
         for step in range(1, cfg.max_steps + 1):
             batch = self._sample_batch(step)
@@ -237,9 +238,10 @@ class GRPOTrainer:
                 with eval_path.open("w", encoding="utf-8") as f:
                     json.dump(eval_metrics, f, indent=2)
 
-            # if step % cfg.save_every_steps == 0:
-            #     ckpt = self._save_checkpoint(step)
-            #     print(f"  saved checkpoint: {ckpt}")
+                if eval_metrics.get('pass@1', 0) > last_eval_metrics.get('pass@1', 0):
+                    ckpt = self._save_checkpoint(step)
+                    print(f"  saved checkpoint: {ckpt} with pass@1={eval_metrics.get('pass@1', 0):.4f}")
+                    last_eval_metrics = eval_metrics
 
         # self._save_checkpoint(cfg.max_steps)
         history_path = self.output_dir / "train_metrics.jsonl"

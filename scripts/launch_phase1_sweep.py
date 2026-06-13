@@ -6,8 +6,11 @@ Edit the SWEEP_GRID below, then:
   # Preview commands
   python scripts/launch_phase1_sweep.py --dry-run
 
-  # Launch all SkyPilot jobs
-  WANDB_API_KEY=... python scripts/launch_phase1_sweep.py
+  # Launch all SkyPilot jobs in parallel (Kueue queues them until GPUs are free)
+  python scripts/launch_phase1_sweep.py
+
+  # Safe to close terminal after all jobs are submitted (use nohup if you want to detach immediately):
+  nohup python scripts/launch_phase1_sweep.py > sweep.log 2>&1 &
 
   # Run one combo locally (no SkyPilot)
   python scripts/launch_phase1_sweep.py --local --only lr=1e-6,bs=4,ga=1
@@ -20,11 +23,16 @@ import itertools
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from qwen3_rlvr.env import load_project_env
+
 SKY_YAML = ROOT / "skypilot" / "sky_phase1_rlvr_reinfoce.yaml"
 BASE_CONFIG = ROOT / "configs" / "phase1_rlvr_gsm8k_reinforce.yaml"
 BASE_WANDB_TAGS = ["phase1", "gsm8k", "reinforce", "qwen2.5-0.5b-instruct", "sweep"]
@@ -34,9 +42,10 @@ BASE_WANDB_TAGS = ["phase1", "gsm8k", "reinforce", "qwen2.5-0.5b-instruct", "swe
 # effective_batch_size = batch_size * grad_accum_steps
 # ---------------------------------------------------------------------------
 SWEEP_GRID = {
-    "lr": [1e-6, 5e-7],
-    "batch_size": [2, 4],
-    "grad_accum_steps": [1, 2],
+    "lr": [1e-6, 5e-7, 1e-5],
+    "batch_size": [4],
+    "grad_accum_steps": [2, 4],
+    'max_steps': [200, 500, 1000],
 }
 
 
@@ -45,7 +54,7 @@ class Experiment:
     lr: float
     batch_size: int
     grad_accum_steps: int
-
+    max_steps: int
     @property
     def effective_batch_size(self) -> int:
         return self.batch_size * self.grad_accum_steps
@@ -53,7 +62,7 @@ class Experiment:
     @property
     def exp_name(self) -> str:
         lr_tag = _format_lr(self.lr)
-        return f"qwen25_p1_lr{lr_tag}_bs{self.batch_size}_ga{self.grad_accum_steps}"
+        return f"qwen25_p1_lr{lr_tag}_bs{self.batch_size}_ga{self.grad_accum_steps}_max{self.max_steps}"
 
     @property
     def wandb_tags(self) -> List[str]:
@@ -63,11 +72,12 @@ class Experiment:
             f"bs:{self.batch_size}",
             f"ga:{self.grad_accum_steps}",
             f"eff_bs:{self.effective_batch_size}",
+            f"max_steps:{self.max_steps}",
         ]
 
     @property
     def selector(self) -> str:
-        return f"lr={_format_lr(self.lr)},bs={self.batch_size},ga={self.grad_accum_steps}"
+        return f"lr={_format_lr(self.lr)},bs={self.batch_size},ga={self.grad_accum_steps},max={self.max_steps}"
 
 
 def _format_lr(lr: float) -> str:
@@ -80,25 +90,46 @@ def _format_lr(lr: float) -> str:
 
 
 def build_experiments(grid: dict[str, Sequence]) -> List[Experiment]:
-    keys = ["lr", "batch_size", "grad_accum_steps"]
+    keys = ["lr", "batch_size", "grad_accum_steps", "max_steps"]
     combos = itertools.product(*(grid[k] for k in keys))
-    return [Experiment(lr=lr, batch_size=bs, grad_accum_steps=ga) for lr, bs, ga in combos]
+    return [Experiment(lr=lr, batch_size=bs, grad_accum_steps=ga, max_steps=ms) for lr, bs, ga, ms in combos]
 
 
-def _sky_launch_cmd(exp: Experiment, wandb_api_key: str | None) -> List[str]:
+def _sky_launch_cmd(exp: Experiment, wandb_api_key: str | None, *, yes: bool) -> List[str]:
     env = {
-        "EXP_NAME": exp.exp_name,
+        "WANDB_EXP_NAME": exp.exp_name,
         "LR": str(exp.lr),
         "BATCH_SIZE": str(exp.batch_size),
         "GRAD_ACCUM_STEPS": str(exp.grad_accum_steps),
         "WANDB_TAGS": ",".join(exp.wandb_tags),
+        "MAX_STEPS": str(exp.max_steps),
     }
-    cmd = ["sky", "jobs", "launch", str(SKY_YAML)]
+    cmd = ["sky", "jobs", "launch", "-n", exp.exp_name, str(SKY_YAML)]
+    if yes:
+        cmd.append("-y")
     for key, value in env.items():
         cmd.extend(["--env", f"{key}={value}"])
-    if wandb_api_key:
-        cmd.extend(["--env", f"WANDB_API_KEY={wandb_api_key}"])
+    # if wandb_api_key:
+    #     cmd.extend(["--env", f"WANDB_API_KEY={wandb_api_key}"])
     return cmd
+
+
+def _submit_sky_job(cmd: List[str], exp_name: str) -> Tuple[str, int]:
+    proc = subprocess.run(cmd, check=False)
+    return exp_name, proc.returncode
+
+
+def _launch_sky_jobs_parallel(jobs: List[Tuple[List[str], str]], *, max_workers: int) -> None:
+    workers = min(max_workers, len(jobs))
+    failures: List[str] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_submit_sky_job, cmd, name) for cmd, name in jobs]
+        for future in as_completed(futures):
+            name, code = future.result()
+            if code != 0:
+                failures.append(name)
+    if failures:
+        raise SystemExit(f"Failed to submit {len(failures)} job(s): {', '.join(sorted(failures))}")
 
 
 def _local_train_cmd(exp: Experiment, output_root: Path) -> List[str]:
@@ -120,6 +151,8 @@ def _local_train_cmd(exp: Experiment, output_root: Path) -> List[str]:
         exp.exp_name,
         "--wandb-tags",
         ",".join(exp.wandb_tags),
+        "--max-steps",
+        str(exp.max_steps),
     ]
 
 
@@ -151,6 +184,22 @@ def main() -> None:
         default=os.environ.get("OUT_ROOT", str(ROOT / "outputs")),
         help="Local output root when using --local",
     )
+    parser.add_argument(
+        "--ask",
+        action="store_true",
+        help="Prompt before each sky jobs launch (default: pass -y to skip prompts)",
+    )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Submit SkyPilot jobs one at a time (default: submit all in parallel)",
+    )
+    parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=32,
+        help="Max concurrent sky jobs launch subprocesses (default: 32)",
+    )
     args = parser.parse_args()
 
     if not BASE_CONFIG.exists():
@@ -158,6 +207,7 @@ def main() -> None:
     if not args.local and not SKY_YAML.exists():
         raise SystemExit(f"Missing SkyPilot yaml: {SKY_YAML}")
 
+    load_project_env()
     experiments = _filter_experiments(build_experiments(SWEEP_GRID), args.only)
     wandb_api_key = os.environ.get("WANDB_API_KEY")
 
@@ -170,21 +220,40 @@ def main() -> None:
 
     if args.local:
         output_root = Path(args.output_root)
-        commands = [_local_train_cmd(exp, output_root) for exp in experiments]
+        jobs = [(_local_train_cmd(exp, output_root), exp.exp_name) for exp in experiments]
     else:
         if not wandb_api_key and not args.dry_run:
-            print("Warning: WANDB_API_KEY is not set; Sky jobs may fail W&B init.", file=sys.stderr)
-        commands = [_sky_launch_cmd(exp, wandb_api_key) for exp in experiments]
+            raise SystemExit(
+                "WANDB_API_KEY is not set. Add it to rlvr/.env or export it, then relaunch.\n"
+                "Manual launch also requires: --env WANDB_API_KEY=$WANDB_API_KEY"
+            )
+        jobs = [
+            (_sky_launch_cmd(exp, wandb_api_key, yes=not args.ask), exp.exp_name)
+            for exp in experiments
+        ]
 
-    for cmd in commands:
-        print("\n$ " + " ".join(cmd))
-        if args.dry_run:
-            continue
-        subprocess.run(cmd, check=True)
+    for cmd, name in jobs:
+        print(f"\n[{name}]\n$ " + " ".join(cmd))
 
-    if not args.dry_run:
-        mode = "local runs" if args.local else "SkyPilot launches"
-        print(f"\nSubmitted {len(commands)} {mode}.")
+    if args.dry_run:
+        return
+
+    if args.local:
+        for cmd, _ in jobs:
+            subprocess.run(cmd, check=True)
+    elif args.sequential:
+        for cmd, name in jobs:
+            _, code = _submit_sky_job(cmd, name)
+            if code != 0:
+                raise SystemExit(f"Failed to submit job: {name}")
+    else:
+        print(f"\nSubmitting {len(jobs)} SkyPilot jobs in parallel (Kueue will schedule as GPUs free)...")
+        _launch_sky_jobs_parallel(jobs, max_workers=args.max_parallel)
+
+    mode = "local runs" if args.local else "SkyPilot launches"
+    print(f"\nSubmitted {len(jobs)} {mode}.")
+    if not args.local:
+        print("Jobs run on the cluster independently — monitor with: sky jobs queue")
 
 
 if __name__ == "__main__":
