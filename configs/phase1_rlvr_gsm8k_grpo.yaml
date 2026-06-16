@@ -11,7 +11,7 @@ dataset:
 
 grpo:
   reinforce: false
-  max_steps: 100
+  max_steps: 50
   batch_size: 4          # questions per micro-batch
   grad_accum_steps: 1    # micro-batches per optimizer step (effective bs = batch_size * grad_accum_steps)
   n_generations: 10       # completions per question (N in GRPO)
@@ -32,7 +32,7 @@ eval:
   every_steps: 25
   dataset: gsm8k
   split: test
-  max_samples: 200
+  max_samples: 2
   max_new_tokens: 512
   n_generations: 5
   k: [1, 3, 5]
