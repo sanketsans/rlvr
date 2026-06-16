@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Sequence, Optional
 
 import torch
 
 from qwen3_rlvr.data.gsm8k import Gsm8kExample
 from qwen3_rlvr.generation.prompts import format_prompt
 from qwen3_rlvr.model.load import LoadedModel
+from qwen3_rlvr.rl.grpo import batched_sequence_log_probs
 
 
 def generate_rollouts(
@@ -18,8 +19,11 @@ def generate_rollouts(
     max_new_tokens: int,
     temperature: float,
     seed: int,
-) -> tuple[List[str], List[List[str]]]:
-    """Return prompts and completions per example (list of N strings each)."""
+    return_logprobs: bool = False,
+) -> tuple[List[str], List[List[str]], Optional[List[torch.Tensor]]]:
+    """Return prompts and completions per example (list of N strings each).
+    If return_logprobs is True, return the log probabilities of the completions.
+    """
     tokenizer = loaded.tokenizer
     tokenizer.padding_side = "left"
     model = loaded.model
@@ -58,13 +62,26 @@ def generate_rollouts(
         model.train()
 
     batch_size = len(prompts)
-    all_completions: List[List[str]] = []
-    for prompt_idx in range(batch_size):
-        texts: List[str] = []
-        for sample_idx in range(n_generations):
-            row = prompt_idx * n_generations + sample_idx
-            text = tokenizer.decode(outputs[row, prompt_len:], skip_special_tokens=True).strip()
-            texts.append(text)
-        all_completions.append(texts)
+    completion_ids = outputs[:, prompt_len:]
+    decoded = tokenizer.batch_decode(
+        completion_ids,
+        skip_special_tokens=True,
+    )
 
-    return prompts, all_completions
+    all_completions = [
+        decoded[i * n_generations:(i + 1) * n_generations]
+        for i in range(batch_size)
+    ]
+
+    if return_logprobs:
+        with torch.no_grad():
+            logprobs = batched_sequence_log_probs(
+                model=model,
+                tokenizer=tokenizer,
+                prompts=prompts,
+                completions=all_completions,
+                device=device,
+            )
+        return prompts, all_completions, logprobs
+    else:
+        return prompts, all_completions

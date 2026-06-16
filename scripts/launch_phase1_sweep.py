@@ -43,9 +43,9 @@ BASE_WANDB_TAGS = ["phase1", "gsm8k", "reinforce", "qwen2.5-0.5b-instruct", "swe
 # ---------------------------------------------------------------------------
 SWEEP_GRID = {
     "lr": [1e-6, 5e-7, 1e-5],
-    "batch_size": [4],
-    "grad_accum_steps": [2, 4],
-    'max_steps': [200, 500, 1000],
+    "batch_size": [4, 8],
+    "grad_accum_steps": [1],
+    'max_steps': [1000],
 }
 
 

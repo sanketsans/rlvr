@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import List, Sequence, Optional
 
 import torch
 import torch.nn.functional as F
@@ -17,6 +17,7 @@ class GRPOBatch:
     completions: List[List[str]]
     rewards: torch.Tensor  # [B, N]
     advantages: torch.Tensor  # [B, N]
+    old_logprobs: Optional[List[torch.Tensor]] = None
 
 
 def compute_advantages(rewards: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
@@ -49,10 +50,14 @@ def batched_sequence_log_probs(
     model: nn.Module,
     tokenizer,
     prompts: List[str],
-    completions: List[str],
+    completions:  List[List[str]],
     device: torch.device,
 ) -> torch.Tensor:
     """Per-sequence sum of log-probs over completion tokens. Returns shape [B]."""
+    tokenizer.padding_side = "right"
+    prompts = np.repeat(prompts, len(completions[0]), axis=0).tolist()
+    completions = np.concatenate(completions, axis=0).tolist()
+
     assert len(prompts) == len(completions)  
     # input_ids: prompt tokens + completion tokens (only valid tokens to be included in the log-probs, no padding)
     input_ids, attention_mask, prompt_len = batched_tokenize_prompt_completion(tokenizer, prompts, completions, device)
@@ -80,30 +85,53 @@ def compute_policy_loss(
     kl_coef: float,
     device: torch.device,
     reinforce: bool = False,
+    clip_eps: float = 0.2,
 ) -> tuple[torch.Tensor, dict]:
     """Aggregate GRPO loss over all question-completion pairs."""
     policy.train()
     reference.eval()
-    tokenizer.padding_side = "right"
-
-    prompts = np.repeat(grpo_batch.prompts, len(grpo_batch.completions[0]), axis=0).tolist()
-    completions = np.concatenate(grpo_batch.completions, axis=0).tolist()
     advantages = grpo_batch.advantages.reshape(-1).to(device)
 
     active_advantage_mask = advantages.abs() > 1e-8
     if active_advantage_mask.sum() == 0:
         return torch.zeros((), device=device), {"num_loss_terms": 0, "policy_logp_mean": 0.0, "kl_mean": 0.0} 
 
-    policy_logp = batched_sequence_log_probs(policy, tokenizer, prompts, completions, device) 
+    policy_logp = batched_sequence_log_probs(policy, tokenizer, grpo_batch.prompts, grpo_batch.completions, device) 
+    with torch.no_grad():
+        reference_logp = batched_sequence_log_probs(reference, tokenizer, grpo_batch.prompts, grpo_batch.completions, device)
+        reference_logp = reference_logp[active_advantage_mask] # [B] 
     policy_logp = policy_logp[active_advantage_mask] # [B] 
     advantages = advantages[active_advantage_mask] # [B] 
 
-    # REINFORCE 
-    loss = (- advantages * policy_logp).mean()
-    metrics = {
+    if reinforce:
+        # REINFORCE 
+        loss = (- advantages * policy_logp).mean()
+        metrics = {
+            "num_loss_terms": active_advantage_mask.sum().item(),
+            "policy_logp_mean": policy_logp.mean().item(),
+            "kl_mean": 0.0,
+        }
+        return loss, metrics
+
+    old_log_probs = grpo_batch.old_logprobs.reshape(-1)[active_advantage_mask]
+    ratio = torch.exp(policy_logp - old_log_probs) 
+    clipped_ratio = torch.clamp(
+        ratio,
+        1.0 - clip_eps,
+        1.0 + clip_eps,
+    ) # [B]
+
+    pg_loss = -torch.min(
+        ratio * advantages,
+        clipped_ratio * advantages,
+    )
+    delta = policy_logp - reference_logp # [B]
+    kl_term = (torch.exp(delta) - delta - 1.0).mean() # [B]
+    loss = (pg_loss + kl_coef * kl_term).mean() # [B]
+    clip_fraction = ((ratio - 1.0).abs() > clip_eps).float().mean() # [B]
+    return loss, {
         "num_loss_terms": active_advantage_mask.sum().item(),
         "policy_logp_mean": policy_logp.mean().item(),
-        "kl_mean": 0.0,
+        "kl_mean": kl_term.mean().item(),
+        "clip_fraction": clip_fraction.item(),
     }
-    # TODO: Implement the KL loss and PPO/GRPO clipping here. 
-    return loss, metrics

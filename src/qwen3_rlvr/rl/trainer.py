@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import random
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 
 import torch
 from torch.optim import AdamW
@@ -20,6 +21,8 @@ from qwen3_rlvr.model.load import load_policy_and_reference
 from qwen3_rlvr.rewards.exact_match import exact_match_rewards
 from qwen3_rlvr.rewards.extract import extract_answer
 from qwen3_rlvr.rl.grpo import compute_advantages, compute_policy_loss, GRPOBatch
+
+from tqdm import tqdm
 
 
 @dataclass
@@ -45,7 +48,8 @@ class TrainerConfig:
     eval_k: List[int] = field(default_factory=lambda: [1, 8])
     eval_n_generations: int = 8
     eval_max_new_tokens: int = 256
-    reinforce: bool = False
+    reinforce: bool = False # whether to use reinforce training
+    grpo_epochs: int = 1 # number of epochs to run GRPO policy updates / rollouts for each batch
     log_every_steps: int = 10
     log_samples_every: int = 50
     sample_table_size: int = 8
@@ -56,7 +60,7 @@ class TrainerConfig:
     wandb_tags: Optional[List[str]] = None
 
 
-class GRPOTrainer:
+class Trainer(ABC):
     def __init__(self, config: TrainerConfig):
         self.config = config
         self.output_dir = Path(config.output_dir)
@@ -103,12 +107,45 @@ class GRPOTrainer:
             json.dump(meta, f, indent=2)
         return ckpt
 
-    def train(self) -> None:
-        cfg = self.config
-        device = self.policy.device
-        metrics_history: List[dict] = []
-        self.optimizer.zero_grad()
+    def log_samples(self, cfg: TrainerConfig, step_metrics: dict, step: int, batch: List[Any], grpo_batch: GRPOBatch) -> None:
+        if step % cfg.log_every_steps == 0:
+            print(
+                f"step {step}/{cfg.max_steps} loss={step_metrics['loss']:.4f} "
+                # f"reward={step_metrics['reward_mean']:.3f} kl={step_metrics.get('loss/kl_mean', 0):.4f} "
+                f"reward_std={step_metrics['reward_std']:.3f} reward_mean={step_metrics['reward_mean']:.3f} "
+                f"advantage_mean={step_metrics['advantage_mean']:.3f} advantage_std={step_metrics['advantage_std']:.3f} "
+                f"group_reward_spread={step_metrics['group_reward_spread']:.3f} "
+            )
 
+        if self.wandb is not None:
+            self.wandb.log_train(step_metrics, step=step)
+
+        if step == 1 or step % cfg.log_samples_every == 0:
+            stage = training_stage(step, cfg.max_steps)
+            records = []
+            for ex, prompt, comp_list, rew_row in zip(batch, grpo_batch.prompts, grpo_batch.completions, grpo_batch.rewards):
+                for comp, r in zip(comp_list, rew_row.tolist()):
+                    records.append(
+                        {
+                            "step": step,
+                            "stage": stage,
+                            "example_id": ex.example_id,
+                            "question": ex.question,
+                            "ground_truth": extract_answer(ex.answer),
+                            "completion": comp,
+                            "reward": r,
+                        }
+                    )
+            self.sample_logger.append_many(records[: cfg.sample_table_size])
+            if self.wandb is not None:
+                self.wandb.log_samples(records[: cfg.sample_table_size], step=step, stage=stage)
+
+
+    @abstractmethod
+    def train(self) -> None:
+        ...
+
+    def eval(self, cfg: TrainerConfig, last_eval_metrics: dict, step: int) -> dict:
         eval_metrics = evaluate_gsm8k_quick(
             loaded=self.policy,
             split=cfg.eval_split,
@@ -118,15 +155,35 @@ class GRPOTrainer:
             max_new_tokens=cfg.eval_max_new_tokens,
             temperature=cfg.temperature,
             question_batch_size=cfg.batch_size,
-            seed=cfg.seed,
+            seed=cfg.seed + step,
         )
-        last_eval_metrics = eval_metrics
         print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
         if self.wandb is not None:
             self.wandb.log_eval(eval_metrics, step=0)
         eval_path = self.output_dir / f"eval_step_0.json"
         with eval_path.open("w", encoding="utf-8") as f:
             json.dump(eval_metrics, f, indent=2)
+
+        if step == 0:
+            last_eval_metrics = eval_metrics
+
+        if step > 0 and eval_metrics.get('pass@1', 0) > last_eval_metrics.get('pass@1', 0):
+            ckpt = self._save_checkpoint(step)
+            print(f"  saved checkpoint: {ckpt} with pass@1={eval_metrics.get('pass@1', 0):.4f}")
+            last_eval_metrics = eval_metrics
+
+        return last_eval_metrics
+
+
+class ReinforceTrainer(Trainer):
+    def train(self) -> None:
+        cfg = self.config
+        device = self.policy.device
+        metrics_history: List[dict] = []
+        self.optimizer.zero_grad()
+
+        # last_eval_metrics = self.eval(cfg, {}, 0)
+        last_eval_metrics = None
 
         for step in range(1, cfg.max_steps + 1):
             batch = self._sample_batch(step)
@@ -151,6 +208,7 @@ class GRPOTrainer:
                 completions=completions,
                 rewards=rewards,
                 advantages=advantages,
+                old_logprobs=None,
             )
 
             loss, loss_metrics = compute_policy_loss(
@@ -186,64 +244,90 @@ class GRPOTrainer:
                 self.optimizer.zero_grad()
 
             metrics_history.append(step_metrics)
-
-            if step % cfg.log_every_steps == 0:
-                print(
-                    f"step {step}/{cfg.max_steps} loss={step_metrics['loss']:.4f} "
-                    # f"reward={step_metrics['reward_mean']:.3f} kl={step_metrics.get('loss/kl_mean', 0):.4f} "
-                    f"reward_std={step_metrics['reward_std']:.3f} reward_mean={step_metrics['reward_mean']:.3f} "
-                    f"advantage_mean={step_metrics['advantage_mean']:.3f} advantage_std={step_metrics['advantage_std']:.3f} "
-                    f"group_reward_spread={step_metrics['group_reward_spread']:.3f} "
-                )
-
-            if self.wandb is not None:
-                self.wandb.log_train(step_metrics, step=step)
-
-            if step == 1 or step % cfg.log_samples_every == 0:
-                stage = training_stage(step, cfg.max_steps)
-                records = []
-                for ex, prompt, comp_list, rew_row in zip(batch, prompts, completions, reward_rows):
-                    for comp, r in zip(comp_list, rew_row.tolist()):
-                        records.append(
-                            {
-                                "step": step,
-                                "stage": stage,
-                                "example_id": ex.example_id,
-                                "question": ex.question,
-                                "ground_truth": extract_answer(ex.answer),
-                                "completion": comp,
-                                "reward": r,
-                            }
-                        )
-                self.sample_logger.append_many(records[: cfg.sample_table_size])
-                if self.wandb is not None:
-                    self.wandb.log_samples(records[: cfg.sample_table_size], step=step, stage=stage)
+            self.log_samples(cfg, step_metrics, step, batch, grpo_batch)
 
             if step % cfg.eval_every_steps == 0:
-                eval_metrics = evaluate_gsm8k_quick(
-                    loaded=self.policy,
-                    split=cfg.eval_split,
-                    max_samples=cfg.eval_max_samples,
-                    n_generations=cfg.eval_n_generations,
-                    k_values=cfg.eval_k,
-                    max_new_tokens=cfg.eval_max_new_tokens,
-                    temperature=cfg.temperature,
-                    seed=cfg.seed + step,
-                    question_batch_size=cfg.batch_size,
-                )
-                print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
-                if self.wandb is not None:
-                    self.wandb.log_eval(eval_metrics, step=step)
-                eval_path = self.output_dir / f"eval_step_{step}.json"
-                with eval_path.open("w", encoding="utf-8") as f:
-                    json.dump(eval_metrics, f, indent=2)
-
-                if eval_metrics.get('pass@1', 0) > last_eval_metrics.get('pass@1', 0):
-                    ckpt = self._save_checkpoint(step)
-                    print(f"  saved checkpoint: {ckpt} with pass@1={eval_metrics.get('pass@1', 0):.4f}")
-                    last_eval_metrics = eval_metrics
+                last_eval_metrics = self.eval(cfg, last_eval_metrics, step)
 
         # self._save_checkpoint(cfg.max_steps)
+        history_path = self.output_dir / "train_metrics.jsonl"
+        with history_path.open("w", encoding="utf-8") as f:
+            for row in metrics_history:
+                f.write(json.dumps(row) + "\n")
+
+        if self.wandb is not None:
+            self.wandb.finish()
+
+
+class GRPOTrainer(Trainer):
+    def train(self) -> None:
+        cfg = self.config
+        device = self.policy.device
+        metrics_history: List[dict] = []
+        self.optimizer.zero_grad()
+
+        for step in tqdm(range(1, cfg.max_steps + 1), desc="Training GRPO"):
+            batch = self._sample_batch(step)
+            prompts, completions, old_logprobs = generate_rollouts(
+                loaded=self.policy,
+                examples=batch,
+                n_generations=cfg.n_generations,
+                max_new_tokens=cfg.max_new_tokens,
+                temperature=cfg.temperature,
+                seed=cfg.seed + step,
+                return_logprobs=True,
+            )
+
+            reward_rows = [
+                torch.tensor(exact_match_rewards(comp_list, ex.answer), dtype=torch.float32)
+                for comp_list, ex in zip(completions, batch)
+            ]
+            rewards = torch.stack(reward_rows, dim=0)
+            advantages = compute_advantages(rewards)
+
+            grpo_batch = GRPOBatch(
+                prompts=prompts,
+                completions=completions,
+                rewards=rewards,
+                advantages=advantages,
+                old_logprobs=old_logprobs,
+            )
+            step_metrics = {
+                "step": step,
+                "reward_mean": rewards.mean().item(),
+                "reward_std": rewards.std().item(),
+                "frac_correct": rewards.mean().item(),
+                "advantage_mean": advantages.mean().item(),
+                "advantage_std": advantages.std().item(),
+                "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values).mean().item(),
+            }
+
+            for _ in range(cfg.grpo_epochs):
+                loss, loss_metrics = compute_policy_loss(
+                    policy=self.policy.model,
+                    reference=self.reference.model,
+                    tokenizer=self.policy.tokenizer,
+                    grpo_batch=grpo_batch,
+                    kl_coef=cfg.kl_coef,
+                    device=device,
+                    reinforce=False,
+                )
+                step_metrics.update({
+                    "loss": loss.item(),
+                    **{f"loss/{k}": v for k, v in loss_metrics.items()},
+                })
+
+                loss.backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad() 
+
+                metrics_history.append(step_metrics)
+                self.log_samples(cfg, step_metrics, step, batch, grpo_batch)
+
+                if step % cfg.eval_every_steps == 0:
+                    last_eval_metrics = self.eval(cfg, last_eval_metrics, step)
+
+        self._save_checkpoint(cfg.max_steps)
         history_path = self.output_dir / "train_metrics.jsonl"
         with history_path.open("w", encoding="utf-8") as f:
             for row in metrics_history:

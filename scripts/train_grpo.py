@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from qwen3_rlvr.env import load_project_env
-from qwen3_rlvr.rl.trainer import GRPOTrainer, TrainerConfig
+from qwen3_rlvr.rl.trainer import GRPOTrainer, TrainerConfig, ReinforceTrainer
 from qwen3_rlvr.logging.resource_monitor import ResourceMonitor
 
 load_project_env()
@@ -87,7 +87,8 @@ def main() -> None:
         max_new_tokens=grpo_cfg.get("max_new_tokens", 256),
         grad_clip=grpo_cfg.get("grad_clip", 1.0),
         dtype=grpo_cfg.get("dtype", "bfloat16"),
-        reinforce=grpo_cfg.get("reinforce", False),
+        reinforce=grpo_cfg.get("reinforce", False),# whether to use reinforce training
+        grpo_epochs=grpo_cfg.get("grpo_epochs", 1),# number of epochs to run GRPO policy updates / rollouts for each batch
         seed=cfg.get("seed", 42),
         eval_every_steps=eval_cfg.get("every_steps", 50),
         eval_split=eval_cfg.get("split", "test"),
@@ -113,7 +114,10 @@ def main() -> None:
     print(f"Output: {trainer_cfg.output_dir}")
     # if args.monitor_resources:
     with ResourceMonitor(trainer_cfg.output_dir + "/resource_monitor.json", interval_s=args.monitor_interval, label="grpo") as monitor:
-        GRPOTrainer(trainer_cfg).train()
+        if trainer_cfg.reinforce:
+            ReinforceTrainer(trainer_cfg).train()
+        else:
+            GRPOTrainer(trainer_cfg).train()
     monitor.print_summary()
     # else:
     #     GRPOTrainer(trainer_cfg).train()

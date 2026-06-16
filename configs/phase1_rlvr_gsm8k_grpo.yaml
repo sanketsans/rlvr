@@ -2,7 +2,7 @@
 # Override paths via env: MODEL_PATH, OUT_ROOT
 
 model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_grpo
 
 dataset:
   name: gsm8k
@@ -10,7 +10,7 @@ dataset:
   max_samples: null  # null = full train set; set 500 for quick debug
 
 grpo:
-  reinforce: true
+  reinforce: false
   max_steps: 100
   batch_size: 4          # questions per micro-batch
   grad_accum_steps: 1    # micro-batches per optimizer step (effective bs = batch_size * grad_accum_steps)
@@ -22,6 +22,7 @@ grpo:
   grad_clip: 1.0
   dtype: bfloat16
   save_every_steps: 50
+  grpo_epochs: 2
 
 reward:
   type: exact_match
@@ -38,12 +39,12 @@ eval:
 
 logging:
   log_every_steps: 5
-  log_samples_every: 1
+  log_samples_every: 10
   sample_table_size: 8
   wandb:
     project: rlvr
     entity: ${oc.env:WANDB_ENTITY,null}
-    name: qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_reinforce
-    tags: [phase1, gsm8k, reinforce, qwen2.5-0.5b-instruct]
+    name: qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_grpo
+    tags: [phase1, gsm8k, grpo, qwen2.5-0.5b-instruct]
 
 seed: 42
