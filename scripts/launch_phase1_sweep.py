@@ -33,9 +33,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from qwen3_rlvr.env import load_project_env
 
-SKY_YAML = ROOT / "skypilot" / "sky_phase1_rlvr_reinfoce.yaml"
-BASE_CONFIG = ROOT / "configs" / "phase1_rlvr_gsm8k_reinforce.yaml"
-BASE_WANDB_TAGS = ["phase1", "gsm8k", "reinforce", "qwen2.5-0.5b-instruct", "sweep"]
+SKY_YAML = ROOT / "skypilot" / "sky_phase1_rlvr_grpo.yaml"
+BASE_CONFIG = ROOT / "configs" / "phase1_rlvr_gsm8k_grpo.yaml"
+BASE_WANDB_TAGS = ["phase1", "gsm8k", "grpo", "qwen2.5-0.5b-instruct", "sweep"]
 
 # ---------------------------------------------------------------------------
 # Edit this grid — no extra YAML files needed.
@@ -43,7 +43,7 @@ BASE_WANDB_TAGS = ["phase1", "gsm8k", "reinforce", "qwen2.5-0.5b-instruct", "swe
 # ---------------------------------------------------------------------------
 SWEEP_GRID = {
     "lr": [1e-6, 5e-7, 1e-5],
-    "batch_size": [4, 8],
+    "batch_size": [4],
     "grad_accum_steps": [1],
     'max_steps': [1000],
 }

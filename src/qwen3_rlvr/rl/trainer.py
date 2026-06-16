@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Any
 
+import numpy as np
 import torch
 from torch.optim import AdamW
 
@@ -116,7 +117,11 @@ class Trainer(ABC):
                 f"reward_std={step_metrics['reward_std']:.3f} reward_mean={step_metrics['reward_mean']:.3f} "
                 f"advantage_mean={step_metrics['advantage_mean']:.3f} advantage_std={step_metrics['advantage_std']:.3f} "
                 f"group_reward_spread={step_metrics['group_reward_spread']:.3f} "
-                f"clip_fraction={step_metrics.get('clip_fraction', 0):.3f} "
+                f"clip_fraction={step_metrics.get('loss/clip_fraction', 0):.3f} "
+                f"ratio_mean={step_metrics.get('loss/ratio_mean', 0):.3f} "
+                f"ratio_std={step_metrics.get('loss/ratio_std', 0):.3f} "
+                f"ratio_max={step_metrics.get('loss/ratio_max', 0):.3f} "
+                f"ratio_min={step_metrics.get('loss/ratio_min', 0):.3f} "
             )
 
         if self.wandb is not None:
@@ -169,7 +174,7 @@ class Trainer(ABC):
         if step == 0:
             last_eval_metrics = eval_metrics
 
-        if step > 0 and eval_metrics.get('pass@1', 0) > last_eval_metrics.get('pass@1', 0):
+        if last_eval_metrics is None or (step > 0 and eval_metrics.get('pass@1', 0) > last_eval_metrics.get('pass@1', 0)):
             ckpt = self._save_checkpoint(step)
             print(f"  saved checkpoint: {ckpt} with pass@1={eval_metrics.get('pass@1', 0):.4f}")
             last_eval_metrics = eval_metrics
@@ -270,7 +275,6 @@ class GRPOTrainer(Trainer):
         
         # last_eval_metrics = self.eval(cfg, {}, 0)
         last_eval_metrics = None
-        
         for step in tqdm(range(1, cfg.max_steps + 1), desc="Training GRPO"):
             batch = self._sample_batch(step)
             prompts, completions, old_logprobs = generate_rollouts(
@@ -307,6 +311,12 @@ class GRPOTrainer(Trainer):
                 "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values).mean().item(),
             }
 
+            grpo_epoch_clip_fraction = []
+            grpo_epoch_ratio_mean = []
+            grpo_epoch_ratio_std = []
+            grpo_epoch_ratio_max = []
+            grpo_epoch_ratio_min = []
+            grpo_epoch_loss = []
             for _ in range(cfg.grpo_epochs):
                 loss, loss_metrics = compute_policy_loss(
                     policy=self.policy.model,
@@ -317,20 +327,30 @@ class GRPOTrainer(Trainer):
                     device=device,
                     reinforce=False,
                 )
-                step_metrics.update({
-                    "loss": loss.item(),
-                    **{f"loss/{k}": v for k, v in loss_metrics.items()},
-                })
+                grpo_epoch_loss.append(loss.item())
+                grpo_epoch_clip_fraction.append(loss_metrics.get('clip_fraction', 0))
+                grpo_epoch_ratio_mean.append(loss_metrics.get('ratio_mean', 0))
+                grpo_epoch_ratio_std.append(loss_metrics.get('ratio_std', 0))
+                grpo_epoch_ratio_max.append(loss_metrics.get('ratio_max', 0))
+                grpo_epoch_ratio_min.append(loss_metrics.get('ratio_min', 0))
 
                 loss.backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad() 
 
-                metrics_history.append(step_metrics)
-                self.log_samples(cfg, step_metrics, step, batch, grpo_batch)
+            step_metrics.update({
+                "loss": np.mean(grpo_epoch_loss).item(),
+                "clip_fraction": np.mean(grpo_epoch_clip_fraction).item(),
+                "ratio_mean": np.mean(grpo_epoch_ratio_mean).item(),
+                "ratio_std": np.mean(grpo_epoch_ratio_std).item(),
+                "ratio_max": np.mean(grpo_epoch_ratio_max).item(),
+                "ratio_min": np.mean(grpo_epoch_ratio_min).item(),
+            })
+            metrics_history.append(step_metrics)
+            self.log_samples(cfg, step_metrics, step, batch, grpo_batch)
 
-                if step % cfg.eval_every_steps == 0:
-                    last_eval_metrics = self.eval(cfg, last_eval_metrics, step)
+            if step % cfg.eval_every_steps == 0:
+                last_eval_metrics = self.eval(cfg, last_eval_metrics, step)
 
         self._save_checkpoint(cfg.max_steps)
         history_path = self.output_dir / "train_metrics.jsonl"

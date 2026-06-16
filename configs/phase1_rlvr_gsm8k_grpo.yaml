@@ -22,7 +22,7 @@ grpo:
   grad_clip: 1.0
   dtype: bfloat16
   save_every_steps: 50
-  grpo_epochs: 2
+  grpo_epochs: 4
 
 reward:
   type: exact_match
@@ -32,15 +32,15 @@ eval:
   every_steps: 25
   dataset: gsm8k
   split: test
-  max_samples: 2
+  max_samples: 200
   max_new_tokens: 512
   n_generations: 5
   k: [1, 3, 5]
 
 logging:
   log_every_steps: 5
-  log_samples_every: 10
-  sample_table_size: 8
+  log_samples_every: 50
+  sample_table_size: 5
   wandb:
     project: rlvr
     entity: ${oc.env:WANDB_ENTITY,null}

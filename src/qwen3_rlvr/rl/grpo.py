@@ -129,9 +129,15 @@ def compute_policy_loss(
     kl_term = (torch.exp(delta) - delta - 1.0).mean() # [B]
     loss = (pg_loss + kl_coef * kl_term).mean() # [B]
     clip_fraction = ((ratio - 1.0).abs() > clip_eps).float().mean() # [B]
+    print(f"clip_fraction={clip_fraction.item():.3f}")
+    print(f"ratio_mean={ratio.mean().item():.3f}, ratio_std={ratio.std().item():.3f}, ratio_max={ratio.max().item():.3f}, ratio_min={ratio.min().item():.3f}")
     return loss, {
         "num_loss_terms": active_advantage_mask.sum().item(),
         "policy_logp_mean": policy_logp.mean().item(),
         "kl_mean": kl_term.mean().item(),
         "clip_fraction": clip_fraction.item(),
+        "ratio_mean": ratio.mean().item(),
+        "ratio_std": ratio.std().item(),
+        "ratio_max": ratio.max().item(),
+        "ratio_min": ratio.min().item(),
     }
