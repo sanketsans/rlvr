@@ -9,7 +9,7 @@ import torch
 from qwen3_rlvr.data.gsm8k import Gsm8kExample
 from qwen3_rlvr.generation.prompts import format_prompt
 from qwen3_rlvr.model.load import LoadedModel
-from qwen3_rlvr.rl.grpo import batched_sequence_log_probs
+from qwen3_rlvr.rl.grpo import batched_sequence_log_probs, batched_tokenize_prompt_completion
 
 
 def generate_rollouts(
@@ -73,15 +73,15 @@ def generate_rollouts(
         for i in range(batch_size)
     ]
 
+    tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = batched_tokenize_prompt_completion(tokenizer, prompts, all_completions, device)
     if return_logprobs:
         with torch.no_grad():
             logprobs = batched_sequence_log_probs(
                 model=model,
-                tokenizer=tokenizer,
-                prompts=prompts,
-                completions=all_completions,
-                device=device,
+                tokenized_input_ids=tokenized_input_ids,
+                tokenized_attention_mask=tokenized_attention_mask,
+                tokenized_completion_mask=tokenized_completion_mask,
             )
-        return prompts, all_completions, logprobs
+        return prompts, all_completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, logprobs
     else:
-        return prompts, all_completions
+        return prompts, all_completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask

@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Any
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -108,7 +109,7 @@ class Trainer(ABC):
             json.dump(meta, f, indent=2)
         return ckpt
 
-    def log_samples(self, cfg: TrainerConfig, step_metrics: dict, step: int, batch: List[Any], grpo_batch: GRPOBatch) -> None:
+    def log_samples(self, cfg: TrainerConfig, step_metrics: dict, step: int, batch: list[Any], completions: list[list[str]], grpo_batch: GRPOBatch) -> None:
         if step % cfg.log_every_steps == 0:
             log_string = ""
             for k, v in step_metrics.items():
@@ -124,8 +125,23 @@ class Trainer(ABC):
         if step == 1 or step % cfg.log_samples_every == 0:
             stage = training_stage(step, cfg.max_steps)
             records = []
-            for ex, prompt, comp_list, rew_row in zip(batch, grpo_batch.prompts, grpo_batch.completions, grpo_batch.rewards):
-                for comp, r in zip(comp_list, rew_row.tolist()):
+            for ex, comp_list, rew_row in zip(batch, completions, grpo_batch.rewards):
+                best_idx = int(rew_row.argmax().item())
+                worst_idx = int(rew_row.argmin().item())
+                # Log both best and worst completions/rewards, but only best goes to wandb (by truncation below)
+                records.append(
+                    {
+                        "step": step,
+                        "stage": stage,
+                        "example_id": ex.example_id,
+                        "question": ex.question,
+                        "ground_truth": extract_answer(ex.answer),
+                        "completion": comp_list[best_idx],
+                        "reward": rew_row[best_idx].item(),
+                    }
+                )
+                # Also log the worst case for local inspection, but this won't go to wandb (unless sample_table_size > 1)
+                if best_idx != worst_idx:
                     records.append(
                         {
                             "step": step,
@@ -133,10 +149,11 @@ class Trainer(ABC):
                             "example_id": ex.example_id,
                             "question": ex.question,
                             "ground_truth": extract_answer(ex.answer),
-                            "completion": comp,
-                            "reward": r,
+                            "completion": comp_list[worst_idx],
+                            "reward": rew_row[worst_idx].item(),
                         }
                     )
+       
             self.sample_logger.append_many(records[: cfg.sample_table_size])
             if self.wandb is not None:
                 self.wandb.log_samples(records[: cfg.sample_table_size], step=step, stage=stage)
@@ -155,7 +172,7 @@ class Trainer(ABC):
             k_values=cfg.eval_k,
             max_new_tokens=cfg.eval_max_new_tokens,
             temperature=cfg.temperature,
-            question_batch_size=cfg.batch_size,
+            question_batch_size=cfg.batch_size * 2 ,
             seed=cfg.seed + step,
         )
         print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
@@ -179,7 +196,6 @@ class Trainer(ABC):
 class ReinforceTrainer(Trainer):
     def train(self) -> None:
         cfg = self.config
-        device = self.policy.device
         metrics_history: List[dict] = []
         self.optimizer.zero_grad()
 
@@ -188,13 +204,14 @@ class ReinforceTrainer(Trainer):
 
         for step in range(1, cfg.max_steps + 1):
             batch = self._sample_batch(step)
-            prompts, completions = generate_rollouts(
+            _prompts, completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = generate_rollouts(
                 loaded=self.policy,
                 examples=batch,
                 n_generations=cfg.n_generations,
                 max_new_tokens=cfg.max_new_tokens,
                 temperature=cfg.temperature,
                 seed=cfg.seed + step,
+                return_logprobs=False,
             )
 
             reward_rows = [
@@ -205,20 +222,20 @@ class ReinforceTrainer(Trainer):
             advantages = compute_advantages(rewards)
 
             grpo_batch = GRPOBatch(
-                prompts=prompts,
-                completions=completions,
                 rewards=rewards,
+                tokenized_input_ids=tokenized_input_ids,
+                tokenized_attention_mask=tokenized_attention_mask,
+                tokenized_completion_mask=tokenized_completion_mask,
                 advantages=advantages,
-                old_logprobs=None,
             )
 
             loss, loss_metrics = compute_policy_loss(
                 policy=self.policy.model,
                 reference=self.reference.model,
-                tokenizer=self.policy.tokenizer,
+                tokenized_input_ids=tokenized_input_ids,
+                tokenized_attention_mask=tokenized_attention_mask,
+                tokenized_completion_mask=tokenized_completion_mask,
                 grpo_batch=grpo_batch,
-                kl_coef=cfg.kl_coef,
-                device=device,
                 reinforce=cfg.reinforce,
             )
 
@@ -245,7 +262,7 @@ class ReinforceTrainer(Trainer):
                 self.optimizer.zero_grad()
 
             metrics_history.append(step_metrics)
-            self.log_samples(cfg, step_metrics, step, batch, grpo_batch)
+            self.log_samples(cfg, step_metrics, step, batch, completions, grpo_batch)
 
             if step % cfg.eval_every_steps == 0:
                 last_eval_metrics = self.eval(cfg, last_eval_metrics, step)
@@ -263,7 +280,6 @@ class ReinforceTrainer(Trainer):
 class GRPOTrainer(Trainer):
     def train(self) -> None:
         cfg = self.config
-        device = self.policy.device
         metrics_history: List[dict] = []
         self.optimizer.zero_grad()
         
@@ -271,7 +287,7 @@ class GRPOTrainer(Trainer):
         # last_eval_metrics = None
         for step in tqdm(range(1, cfg.max_steps + 1), desc="Training GRPO"):
             batch = self._sample_batch(step)
-            prompts, completions, old_logprobs = generate_rollouts(
+            _prompts, completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, old_logprobs = generate_rollouts(
                 loaded=self.policy,
                 examples=batch,
                 n_generations=cfg.n_generations,
@@ -289,11 +305,12 @@ class GRPOTrainer(Trainer):
             advantages = compute_advantages(rewards)
 
             grpo_batch = GRPOBatch(
-                prompts=prompts,
-                completions=completions,
                 rewards=rewards,
                 advantages=advantages,
-                old_logprobs=old_logprobs,
+                old_token_logp=old_logprobs,
+                tokenized_input_ids=tokenized_input_ids,
+                tokenized_attention_mask=tokenized_attention_mask,
+                tokenized_completion_mask=tokenized_completion_mask,
             )
             step_metrics = {
                 "step": step,
@@ -305,25 +322,14 @@ class GRPOTrainer(Trainer):
                 "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values).mean().item(),
             }
 
-            grpo_epoch_clip_fraction = []
-            grpo_epoch_ratio_mean = []
-            grpo_epoch_ratio_std = []
-            grpo_epoch_ratio_max = []
-            grpo_epoch_ratio_min = []
-            grpo_epoch_pg_loss_mean = []
-            grpo_epoch_policy_logp_mean = []
-            grpo_epoch_reference_logp_mean = []
-            grpo_epoch_delta_mean = []
-            grpo_epoch_kl_mean = []
-            grpo_epoch_loss = []
+            grpo_epoch_metrics = defaultdict(list)
             for epoch_idx in range(cfg.grpo_epochs):
                 loss, loss_metrics = compute_policy_loss(
                     policy=self.policy.model,
-                    reference=self.reference.model,
                     tokenizer=self.policy.tokenizer,
+                    reference=self.reference.model,
                     grpo_batch=grpo_batch,
                     kl_coef=cfg.kl_coef,
-                    device=device,
                     reinforce=False,
                 )
                 if loss_metrics["num_loss_terms"] == 0:
@@ -333,17 +339,9 @@ class GRPOTrainer(Trainer):
                             "(all group advantages are ~0; uniform rewards within groups)"
                         )
                     continue
-                grpo_epoch_loss.append(loss.item())
-                grpo_epoch_clip_fraction.append(loss_metrics.get('clip_fraction', 0))
-                grpo_epoch_ratio_mean.append(loss_metrics.get('ratio_mean', 0))
-                grpo_epoch_ratio_std.append(loss_metrics.get('ratio_std', 0))
-                grpo_epoch_ratio_max.append(loss_metrics.get('ratio_max', 0))
-                grpo_epoch_ratio_min.append(loss_metrics.get('ratio_min', 0))
-                grpo_epoch_pg_loss_mean.append(loss_metrics.get('pg_loss_mean', 0))
-                grpo_epoch_policy_logp_mean.append(loss_metrics.get('policy_logp_mean', 0))
-                grpo_epoch_reference_logp_mean.append(loss_metrics.get('reference_logp_mean', 0))
-                grpo_epoch_delta_mean.append(loss_metrics.get('delta_mean', 0))
-                grpo_epoch_kl_mean.append(loss_metrics.get('kl_mean', 0))
+                grpo_epoch_metrics['loss'].append(loss.item())
+                for k, v in loss_metrics.items():
+                    grpo_epoch_metrics[k].append(v)
                 
                 loss.backward()
                 if cfg.grad_clip > 0:
@@ -352,20 +350,11 @@ class GRPOTrainer(Trainer):
                 self.optimizer.zero_grad()
 
             step_metrics.update({
-                "loss": np.mean(grpo_epoch_loss).item(),
-                "clip_fraction": np.mean(grpo_epoch_clip_fraction).item(),
-                "ratio_mean": np.mean(grpo_epoch_ratio_mean).item(),
-                "ratio_std": np.mean(grpo_epoch_ratio_std).item(),
-                "ratio_max": np.mean(grpo_epoch_ratio_max).item(),
-                "ratio_min": np.mean(grpo_epoch_ratio_min).item(),
-                "pg_loss_mean": np.mean(grpo_epoch_pg_loss_mean).item(),
-                "policy_logp_mean": np.mean(grpo_epoch_policy_logp_mean).item(),
-                "reference_logp_mean": np.mean(grpo_epoch_reference_logp_mean).item(),
-                "delta_mean": np.mean(grpo_epoch_delta_mean).item(),
-                "kl_mean": np.mean(grpo_epoch_kl_mean).item(),
+                "loss": np.mean(grpo_epoch_metrics['loss']).item(),
+                **{f"loss/{k}": np.mean(v).item() for k, v in grpo_epoch_metrics.items()},
             })
             metrics_history.append(step_metrics)
-            self.log_samples(cfg, step_metrics, step, batch, grpo_batch)
+            self.log_samples(cfg, step_metrics, step, batch, completions, grpo_batch)
 
             if step % cfg.eval_every_steps == 0:
                 last_eval_metrics = self.eval(cfg, last_eval_metrics, step)

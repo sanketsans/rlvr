@@ -1,4 +1,54 @@
-nohup: ignoring input
-YAML to run: /home/coder/Projects/rlvr/skypilot/sky_phase1_rlvr_grpo.yaml
-YAML to run: /home/coder/Projects/rlvr/skypilot/sky_phase1_rlvr_grpo.yaml
-YAML to run: /home/coder/Projects/rlvr/skypilot/sky_phase1_rlvr_grpo.yaml
+YAML to run: skypilot/sky_phase1_rlvr_grpo.yaml
+Managed job 'grpo_qwen25' will be launched on (estimated):
+Applying server admin policy: WorkloadTypeTolerationPolicy
+INFO:main:Admin policy request parsed: user=sanket.thakur@multiversecomputing.com contexts=['multiversecomputing.teleport.sh-research-dev-hyperpod-eus2'] requested_gpus=['h200'] tolerations=[{'key': 'node-pool', 'operator': 'Equal', 'value': 'gpu-nvidia-h200', 'effect': 'NoSchedule'}, {'key': 'workload-type', 'operator': 'Equal', 'value': 'kueue', 'effect': 'NoSchedule'}] labels=[{'sapCode': 'AIRBUS.1.1', 'kueue.x-k8s.io/queue-name': 'airbus.1.1'}] annotations={'kueue.x-k8s.io/podset-required-topology': 'kubernetes.io/hostname'}
+Considered resources (1 node):
+----------------------------------------------------------------------------------------------------
+ INFRA                                    INSTANCE   vCPUs   Mem(GB)   GPUS     COST ($)   CHOSEN   
+----------------------------------------------------------------------------------------------------
+ Kubernetes (multiversec...perpod-eus2)   -          10      32        H200:1   0.00       [32m   ✔[0m     
+----------------------------------------------------------------------------------------------------
+Launching a managed job 'grpo_qwen25'. Proceed? [Y/n]: Traceback (most recent call last):
+  File "/home/coder/miniconda3/envs/olmo/bin/sky", line 6, in <module>
+    sys.exit(cli())
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/cli.py", line 9, in cli
+    command.cli()
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/core.py", line 1161, in __call__
+    return self.main(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/core.py", line 1082, in main
+    rv = self.invoke(ctx)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/common_utils.py", line 680, in _record
+    return f(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/client/cli/command.py", line 1085, in invoke
+    return super().invoke(ctx)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/core.py", line 1697, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/common_utils.py", line 680, in _record
+    return f(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/client/cli/command.py", line 1085, in invoke
+    return super().invoke(ctx)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/core.py", line 1697, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/core.py", line 1443, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/core.py", line 788, in invoke
+    return __callback(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/common_utils.py", line 700, in _record
+    return f(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/common_utils.py", line 700, in _record
+    return f(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/client/cli/command.py", line 5720, in jobs_launch
+    request_id = managed_jobs.launch(dag,
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/context.py", line 420, in wrapper
+    return context.run(run_in_context, *args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/context.py", line 412, in run_in_context
+    return func(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/utils/common_utils.py", line 700, in _record
+    return f(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/server/common.py", line 930, in wrapper
+    return func(*args, **kwargs)
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/sky/jobs/client/sdk.py", line 117, in launch
+    click.confirm(prompt,
+  File "/home/coder/miniconda3/envs/olmo/lib/python3.10/site-packages/click/termui.py", line 233, in confirm
+    value = visible_prompt_func(" ").lower().strip()
+OSError: [Errno 9] Bad file descriptor

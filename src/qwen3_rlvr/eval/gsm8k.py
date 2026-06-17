@@ -40,7 +40,7 @@ def evaluate_gsm8k_quick(
     try:
         for start in range(0, len(examples), question_batch_size):
             batch = examples[start : start + question_batch_size]
-            _, completions = generate_rollouts(
+            _, completions, _, _, _ = generate_rollouts(
                 loaded=loaded,
                 examples=batch,
                 n_generations=n_generations,
