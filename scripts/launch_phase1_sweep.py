@@ -45,7 +45,7 @@ SWEEP_GRID = {
     "lr": [1e-6, 5e-7, 1e-5],
     "batch_size": [4],
     "grad_accum_steps": [1],
-    'max_steps': [1000],
+    'max_steps': [500],
 }
 
 
@@ -97,7 +97,7 @@ def build_experiments(grid: dict[str, Sequence]) -> List[Experiment]:
 
 def _sky_launch_cmd(exp: Experiment, wandb_api_key: str | None, *, yes: bool) -> List[str]:
     env = {
-        "WANDB_EXP_NAME": exp.exp_name + "_noCoT",
+        "WANDB_EXP_NAME": exp.exp_name,
         "LR": str(exp.lr),
         "BATCH_SIZE": str(exp.batch_size),
         "GRAD_ACCUM_STEPS": str(exp.grad_accum_steps),
