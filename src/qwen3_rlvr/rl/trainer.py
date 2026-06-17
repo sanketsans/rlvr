@@ -117,11 +117,11 @@ class Trainer(ABC):
                 f"reward_std={step_metrics['reward_std']:.3f} reward_mean={step_metrics['reward_mean']:.3f} "
                 f"advantage_mean={step_metrics['advantage_mean']:.3f} advantage_std={step_metrics['advantage_std']:.3f} "
                 f"group_reward_spread={step_metrics['group_reward_spread']:.3f} "
-                f"clip_fraction={step_metrics.get('loss/clip_fraction', 0):.3f} "
-                f"ratio_mean={step_metrics.get('loss/ratio_mean', 0):.3f} "
-                f"ratio_std={step_metrics.get('loss/ratio_std', 0):.3f} "
-                f"ratio_max={step_metrics.get('loss/ratio_max', 0):.3f} "
-                f"ratio_min={step_metrics.get('loss/ratio_min', 0):.3f} "
+                f"clip_fraction={step_metrics.get('clip_fraction', 0):.3f} "
+                f"ratio_mean={step_metrics.get('ratio_mean', 0):.3f} "
+                f"ratio_std={step_metrics.get('ratio_std', 0):.3f} "
+                f"ratio_max={step_metrics.get('ratio_max', 0):.3f} "
+                f"ratio_min={step_metrics.get('ratio_min', 0):.3f} "
             )
 
         if self.wandb is not None:
@@ -167,7 +167,7 @@ class Trainer(ABC):
         print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
         if self.wandb is not None:
             self.wandb.log_eval(eval_metrics, step=0)
-        eval_path = self.output_dir / f"eval_step_0.json"
+        eval_path = self.output_dir / f"eval_step_{step}.json"
         with eval_path.open("w", encoding="utf-8") as f:
             json.dump(eval_metrics, f, indent=2)
 
@@ -273,8 +273,8 @@ class GRPOTrainer(Trainer):
         metrics_history: List[dict] = []
         self.optimizer.zero_grad()
         
-        # last_eval_metrics = self.eval(cfg, {}, 0)
-        last_eval_metrics = None
+        last_eval_metrics = self.eval(cfg, {}, 0)
+        # last_eval_metrics = None
         for step in tqdm(range(1, cfg.max_steps + 1), desc="Training GRPO"):
             batch = self._sample_batch(step)
             prompts, completions, old_logprobs = generate_rollouts(

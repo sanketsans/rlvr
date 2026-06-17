@@ -1,0 +1,13 @@
+nohup: ignoring input
+YAML to run: /home/coder/Projects/rlvr/skypilot/sky_phase1_rlvr_grpo.yaml
+YAML to run: YAML to run: /home/coder/Projects/rlvr/skypilot/sky_phase1_rlvr_grpo.yaml
+/home/coder/Projects/rlvr/skypilot/sky_phase1_rlvr_grpo.yaml
+Applying server admin policy: WorkloadTypeTolerationPolicy
+INFO:main:Admin policy request parsed: user=sanket.thakur@multiversecomputing.com contexts=['multiversecomputing.teleport.sh-research-dev-hyperpod-use1'] requested_gpus=['h200'] tolerations=[{'key': 'node-pool', 'operator': 'Equal', 'value': 'gpu-nvidia-h200', 'effect': 'NoSchedule'}, {'key': 'workload-type', 'operator': 'Equal', 'value': 'kueue', 'effect': 'NoSchedule'}] labels=[{'sapCode': 'AIRBUS.1.1', 'kueue.x-k8s.io/queue-name': 'airbus.1.1'}] annotations={'kueue.x-k8s.io/podset-required-topology': 'kubernetes.io/hostname'}
+[33mLaunching managed job 'qwen25_p1_lr1e-5_bs4_ga1_max1000'...[0m
+Applying server admin policy: WorkloadTypeTolerationPolicy
+INFO:main:Admin policy request parsed: user=sanket.thakur@multiversecomputing.com contexts=['multiversecomputing.teleport.sh-research-dev-hyperpod-use1'] requested_gpus=['h200'] tolerations=[{'key': 'node-pool', 'operator': 'Equal', 'value': 'gpu-nvidia-h200', 'effect': 'NoSchedule'}, {'key': 'workload-type', 'operator': 'Equal', 'value': 'kueue', 'effect': 'NoSchedule'}] labels=[{'sapCode': 'AIRBUS.1.1', 'kueue.x-k8s.io/queue-name': 'airbus.1.1'}] annotations={'kueue.x-k8s.io/podset-required-topology': 'kubernetes.io/hostname'}
+[33mLaunching managed job 'qwen25_p1_lr5e-7_bs4_ga1_max1000'...[0m
+Applying server admin policy: WorkloadTypeTolerationPolicy
+INFO:main:Admin policy request parsed: user=sanket.thakur@multiversecomputing.com contexts=['multiversecomputing.teleport.sh-research-dev-hyperpod-use1'] requested_gpus=['h200'] tolerations=[{'key': 'node-pool', 'operator': 'Equal', 'value': 'gpu-nvidia-h200', 'effect': 'NoSchedule'}, {'key': 'workload-type', 'operator': 'Equal', 'value': 'kueue', 'effect': 'NoSchedule'}] labels=[{'sapCode': 'AIRBUS.1.1', 'kueue.x-k8s.io/queue-name': 'airbus.1.1'}] annotations={'kueue.x-k8s.io/podset-required-topology': 'kubernetes.io/hostname'}
+[33mLaunching managed job 'qwen25_p1_lr1e-6_bs4_ga1_max1000'...[0m

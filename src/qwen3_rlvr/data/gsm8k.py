@@ -9,7 +9,7 @@ from datasets import load_dataset
 
 
 SYSTEM_PROMPT = (
-    "You are a helpful assistant. Solve the math problem step by step. "
+    "You are a helpful assistant. Solve the math problem in one go. "
     "End your response with the final numeric answer on its own line in the format: #### <answer>"
 )
 

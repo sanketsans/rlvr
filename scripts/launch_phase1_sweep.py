@@ -62,7 +62,7 @@ class Experiment:
     @property
     def exp_name(self) -> str:
         lr_tag = _format_lr(self.lr)
-        return f"qwen25_p1_lr{lr_tag}_bs{self.batch_size}_ga{self.grad_accum_steps}_max{self.max_steps}"
+        return f"qwen25_p1_lr{lr_tag}_bs{self.batch_size}_ga{self.grad_accum_steps}_max{self.max_steps}_grpo"
 
     @property
     def wandb_tags(self) -> List[str]:
@@ -97,7 +97,7 @@ def build_experiments(grid: dict[str, Sequence]) -> List[Experiment]:
 
 def _sky_launch_cmd(exp: Experiment, wandb_api_key: str | None, *, yes: bool) -> List[str]:
     env = {
-        "WANDB_EXP_NAME": exp.exp_name,
+        "WANDB_EXP_NAME": exp.exp_name + "_noCoT",
         "LR": str(exp.lr),
         "BATCH_SIZE": str(exp.batch_size),
         "GRAD_ACCUM_STEPS": str(exp.grad_accum_steps),
