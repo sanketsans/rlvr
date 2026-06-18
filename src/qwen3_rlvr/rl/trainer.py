@@ -113,7 +113,7 @@ class Trainer(ABC):
         if step % cfg.log_every_steps == 0:
             log_string = ""
             for k, v in step_metrics.items():
-                log_string += f"{k}={v:.3f} "
+                log_string += f"{k}={v:.5f} "
             print(
                 f"step {step}/{cfg.max_steps} loss={step_metrics['loss']:.4f} "
                 f"{log_string}"

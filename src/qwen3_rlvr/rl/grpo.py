@@ -101,7 +101,7 @@ def compute_policy_loss(
     reference: nn.Module,
     grpo_batch: GRPOBatch,
     tokenizer: Optional[Any] = None,
-    kl_coef: Optional[float] = 0.5,
+    kl_coef: Optional[float] = 0.02,
     reinforce: bool = False,
     clip_eps: float = 0.2,
 ) -> tuple[torch.Tensor, dict]:
@@ -181,4 +181,6 @@ def compute_policy_loss(
         "advantage_abs_mean": advantages.abs().mean().item(),
         "advantage_mean": advantages.mean().item(),
         "advantage_std": advantages.std().item(),
+        "delta_mean": delta.mean().item(),
+        "delta_std": delta.std().item(),
     }
