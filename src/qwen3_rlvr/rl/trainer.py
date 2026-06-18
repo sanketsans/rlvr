@@ -126,8 +126,7 @@ class Trainer(ABC):
             stage = training_stage(step, cfg.max_steps)
             records = []
             for ex, comp_list, rew_row in zip(batch, completions, grpo_batch.rewards):
-                best_idx = int(rew_row.argmax().item())
-                worst_idx = int(rew_row.argmin().item())
+                num_correct = (rew_row > 0).sum().item()
                 # Log both best and worst completions/rewards, but only best goes to wandb (by truncation below)
                 records.append(
                     {
@@ -136,23 +135,11 @@ class Trainer(ABC):
                         "example_id": ex.example_id,
                         "question": ex.question,
                         "ground_truth": extract_answer(ex.answer),
-                        "completion": comp_list[best_idx],
-                        "reward": rew_row[best_idx].item(),
+                        "first_completion": comp_list[0],
+                        "reward": rew_row[0].item(),
+                        "num_correct": num_correct,
                     }
                 )
-                # Also log the worst case for local inspection, but this won't go to wandb (unless sample_table_size > 1)
-                if best_idx != worst_idx:
-                    records.append(
-                        {
-                            "step": step,
-                            "stage": stage,
-                            "example_id": ex.example_id,
-                            "question": ex.question,
-                            "ground_truth": extract_answer(ex.answer),
-                            "completion": comp_list[worst_idx],
-                            "reward": rew_row[worst_idx].item(),
-                        }
-                    )
        
             self.sample_logger.append_many(records[: cfg.sample_table_size])
             if self.wandb is not None:
@@ -359,7 +346,7 @@ class GRPOTrainer(Trainer):
             if step % cfg.eval_every_steps == 0:
                 last_eval_metrics = self.eval(cfg, last_eval_metrics, step)
 
-        self._save_checkpoint(cfg.max_steps)
+        # self._save_checkpoint(cfg.max_steps)
         history_path = self.output_dir / "train_metrics.jsonl"
         with history_path.open("w", encoding="utf-8") as f:
             for row in metrics_history:

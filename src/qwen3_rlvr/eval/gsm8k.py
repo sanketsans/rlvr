@@ -2,15 +2,38 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
-import torch
+import math
 
 from qwen3_rlvr.data.gsm8k import load_gsm8k
-from qwen3_rlvr.eval.pass_at_k import compute_pass_at_k
 from qwen3_rlvr.generation.rollout import generate_rollouts
 from qwen3_rlvr.model.load import LoadedModel
 from qwen3_rlvr.rewards.extract import answers_match
+
+def compute_pass_at_k(correct_mask: Sequence[bool], k_values: Sequence[int], method: str = "unbiased") -> Dict[str, float]:
+    n = len(correct_mask)
+    c = sum(correct_mask)
+    metrics: Dict[str, float] = {}
+
+    for k in k_values:
+        if k > n:
+            raise ValueError(f"k={k} requires at least {k} generations, got {n}")
+
+        if method == "first_k":
+            score = 1.0 if any(correct_mask[:k]) else 0.0
+        elif method == "unbiased":
+            if c == 0:
+                score = 0.0
+            elif n - c < k:
+                score = 1.0
+            else:
+                score = 1.0 - math.comb(n - c, k) / math.comb(n, k)
+        else:
+            raise ValueError(f"Unknown pass@k method: {method}")
+
+        metrics[f"pass@{k}"] = score
+    return metrics
 
 
 def evaluate_gsm8k_quick(

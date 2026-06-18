@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence, Optional
+from typing import List, Sequence, Optional, Any
 
 import torch
 import torch.nn.functional as F
@@ -98,9 +98,9 @@ def batched_sequence_log_probs(
 
 def compute_policy_loss(
     policy: nn.Module,
-    tokenizer,
     reference: nn.Module,
     grpo_batch: GRPOBatch,
+    tokenizer: Optional[Any] = None,
     kl_coef: Optional[float] = 0.5,
     reinforce: bool = False,
     clip_eps: float = 0.2,
@@ -125,15 +125,15 @@ def compute_policy_loss(
                                 tokenized_attention_mask, 
                                 tokenized_completion_mask
                                 )
-    policy_token_logp = policy_token_logp[active_advantage_mask]
-    advantages = advantages[active_advantage_mask].to(policy_token_logp.device)
+    policy_token_logp = policy_token_logp[active_advantage_mask].float()
+    advantages = advantages[active_advantage_mask].float().to(policy_token_logp.device)
 
     if reinforce: 
         sequence_log_probs = policy_token_logp.sum(dim=1) 
         loss = -(sequence_log_probs * advantages).mean()
         return loss, {"num_loss_terms": active_advantage_mask.sum().item(), "policy_logp_mean": sequence_log_probs.mean().item(), "advantage_mean": advantages.mean().item()}
 
-    old_token_logp = grpo_batch.old_token_logp[active_advantage_mask]
+    old_token_logp = grpo_batch.old_token_logp[active_advantage_mask].float()
     with torch.no_grad():
         reference_token_logp = batched_sequence_log_probs(
                                 reference, 
@@ -142,7 +142,7 @@ def compute_policy_loss(
                                 tokenized_completion_mask
                                 )
 
-        reference_token_logp = reference_token_logp[active_advantage_mask]
+        reference_token_logp = reference_token_logp[active_advantage_mask].float()
 
     # PPO ratio 
 
@@ -178,6 +178,7 @@ def compute_policy_loss(
         "kl_loss": kl_loss.item(),
         "clip_fraction": clip_fraction.item(),
         "ratio_mean": ratio.mean().item(),
+        "advantage_abs_mean": advantages.abs().mean().item(),
         "advantage_mean": advantages.mean().item(),
         "advantage_std": advantages.std().item(),
     }
