@@ -7,7 +7,9 @@ from typing import Optional, Tuple
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
+from qwen3_rlvr.logging.logger import setup_logger
 
+logger = setup_logger(__name__)
 
 DTYPE_MAP = {
     "bfloat16": torch.bfloat16,
@@ -53,6 +55,7 @@ def load_model_and_tokenizer(
         model.eval()
 
     resolved = next(model.parameters()).device
+    logger.info(f"Loaded model on device: {resolved}")
     return LoadedModel(model=model, tokenizer=tokenizer, device=resolved)
 
 
@@ -65,6 +68,8 @@ def load_policy_and_reference(
     device = _resolve_device(device)
     policy = load_model_and_tokenizer(model_path, dtype=dtype, device=device, train=True)
     reference = load_model_and_tokenizer(model_path, dtype=dtype, device=device, train=False)
+    logger.info(f"Loaded policy and reference models on devices: {policy.device} and {reference.device}")
     for param in reference.model.parameters():
         param.requires_grad = False
+    logger.info(f"Set reference model parameters to not require gradients")
     return policy, reference

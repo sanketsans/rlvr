@@ -16,6 +16,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from qwen3_rlvr.env import load_project_env
 from qwen3_rlvr.rl.trainer import GRPOTrainer, TrainerConfig, ReinforceTrainer
 from qwen3_rlvr.logging.resource_monitor import ResourceMonitor
+from qwen3_rlvr.logging import setup_logger
+
+logger = setup_logger(__name__)
 
 load_project_env()
 
@@ -72,10 +75,23 @@ def main() -> None:
     logging_cfg = _get(cfg, "logging", default={}) or {}
     wandb_cfg = _get(logging_cfg, "wandb", default={}) or {}
 
+    eval_recipes = eval_cfg.get("recipes")
+    if not eval_recipes:
+        eval_recipe = eval_cfg.get("recipe")
+        if eval_recipe:
+            eval_recipes = [eval_recipe]
+        else:
+            dataset = eval_cfg.get("dataset", "gsm8k")
+            split = eval_cfg.get("split", "test")
+            eval_recipes = [f"{dataset}_{split}"]
+    eval_primary_recipe = eval_cfg.get("primary_recipe", eval_recipes[0])
+
     trainer_cfg = TrainerConfig(
         model_path=cfg["model"],
         output_dir=cfg["output_dir"],
         split=dataset_cfg.get("split", "train"),
+        # dataset_name=dataset_cfg.get("name", "gsm8k"),
+        recipe=dataset_cfg.get("recipe"),
         max_samples=dataset_cfg.get("max_samples"),
         max_steps=args.max_steps or grpo_cfg.get("max_steps", 200),
         batch_size=args.batch_size or grpo_cfg.get("batch_size", 2),
@@ -90,7 +106,10 @@ def main() -> None:
         reinforce=grpo_cfg.get("reinforce", False),# whether to use reinforce training
         grpo_epochs=grpo_cfg.get("grpo_epochs", 1),# number of epochs to run GRPO policy updates / rollouts for each batch
         seed=cfg.get("seed", 42),
+        eval_batch_size=eval_cfg.get("eval_batch_size", 32),
         eval_every_steps=eval_cfg.get("every_steps", 50),
+        eval_recipes=list(eval_recipes),
+        eval_primary_recipe=eval_primary_recipe,
         eval_split=eval_cfg.get("split", "test"),
         eval_max_samples=eval_cfg.get("max_samples", 100),
         eval_k=eval_cfg.get("k", [1, 8]),
@@ -110,8 +129,8 @@ def main() -> None:
         ),
     )
 
-    print(f"Training GRPO: {trainer_cfg.model_path}")
-    print(f"Output: {trainer_cfg.output_dir}")
+    logger.info(f"Training GRPO: {trainer_cfg.model_path}")
+    logger.info(f"Output: {trainer_cfg.output_dir}")
     # if args.monitor_resources:
     with ResourceMonitor(trainer_cfg.output_dir + "/resource_monitor.json", interval_s=args.monitor_interval, label="grpo") as monitor:
         if trainer_cfg.reinforce:
@@ -121,7 +140,7 @@ def main() -> None:
     monitor.print_summary()
     # else:
     #     GRPOTrainer(trainer_cfg).train()
-    print("Training complete.")
+    logger.info("Training complete.")
 
 
 if __name__ == "__main__":
