@@ -1,4 +1,4 @@
-"""GSM8K answer extraction and equality checks."""
+"""Answer extraction and equality checks for verifiable math tasks."""
 
 from __future__ import annotations
 
@@ -11,6 +11,27 @@ from sympy.core.numbers import Number
 
 
 _NUM_RE = re.compile(r"-?\d[\d,]*\.?\d*")
+_HASH_RE = re.compile(r"####\s*(.+?)(?:\n|$)", re.MULTILINE)
+
+
+def _extract_boxed(text: str) -> Optional[str]:
+    marker = "\\boxed{"
+    start = text.rfind(marker)
+    if start == -1:
+        return None
+
+    idx = start + len(marker)
+    depth = 1
+    while idx < len(text):
+        ch = text[idx]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start + len(marker) : idx].strip()
+        idx += 1
+    return None
 
 
 def _normalize_numeric(text: str) -> Optional[str]:
@@ -34,10 +55,18 @@ def _normalize_numeric(text: str) -> Optional[str]:
         return text.strip().lower()
 
 
-def extract_answer(text: str, style: str = "gsm8k_hash") -> str:
-    """Extract a final answer from model output or GSM8K reference."""
-    if style == "gsm8k_hash" and "####" in text:
+def extract_answer(text: str) -> str:
+    """Extract a final answer from model output."""
+    hash_match = _HASH_RE.search(text)
+    if hash_match:
+        return hash_match.group(1).strip()
+
+    if "####" in text:
         return text.split("####")[-1].strip()
+
+    boxed = _extract_boxed(text)
+    if boxed is not None:
+        return boxed
 
     matches = _NUM_RE.findall(text.replace(",", ""))
     if matches:
@@ -46,10 +75,30 @@ def extract_answer(text: str, style: str = "gsm8k_hash") -> str:
     return text.strip()
 
 
+def extract_reference_answer(text: str, source: str) -> str:
+    """Extract canonical reference answers from dataset-specific fields."""
+    source = source.lower()
+    if source == "gsm8k":
+        if "####" in text:
+            return text.split("####")[-1].strip()
+        return extract_answer(text)
+
+    if source == "math":
+        boxed = _extract_boxed(text)
+        if boxed is not None:
+            return boxed
+        return extract_answer(text)
+
+    if source == "aime":
+        return str(text).strip()
+
+    return extract_answer(text)
+
+
 def answers_match(prediction: str, reference: str) -> bool:
-    """Return True when extracted prediction matches reference answer."""
+    """Return True when extracted prediction matches a canonical reference answer."""
     pred = extract_answer(prediction)
-    ref = extract_answer(reference)
+    ref = reference.strip()
 
     pred_norm = _normalize_numeric(pred)
     ref_norm = _normalize_numeric(ref)

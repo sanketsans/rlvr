@@ -14,15 +14,18 @@ import numpy as np
 import torch
 from torch.optim import AdamW
 
-from qwen3_rlvr.data.gsm8k import Gsm8kExample, load_gsm8k
-from qwen3_rlvr.eval.gsm8k import evaluate_gsm8k_quick
+from qwen3_rlvr.data.base import VerifiableExample
+from qwen3_rlvr.data.recipe import load_dataset_by_name, load_recipe
+from qwen3_rlvr.eval.recipe_eval import evaluate_recipe_quick
 from qwen3_rlvr.generation.rollout import generate_rollouts
 from qwen3_rlvr.logging.artifacts import SampleLogger, training_stage
 from qwen3_rlvr.logging.wandb_grpo import GRPO_WandbLogger
 from qwen3_rlvr.model.load import load_policy_and_reference
 from qwen3_rlvr.rewards.exact_match import exact_match_rewards
-from qwen3_rlvr.rewards.extract import extract_answer
 from qwen3_rlvr.rl.grpo import compute_advantages, compute_policy_loss, GRPOBatch
+from qwen3_rlvr.logging.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 from tqdm import tqdm
 
@@ -32,6 +35,8 @@ class TrainerConfig:
     model_path: str
     output_dir: str
     split: str = "train"
+    dataset_name: Optional[str] = "gsm8k"
+    recipe: Optional[str] = "gsm8k_train"
     max_samples: Optional[int] = None
     max_steps: int = 200
     batch_size: int = 2
@@ -44,7 +49,10 @@ class TrainerConfig:
     grad_clip: float = 1.0
     dtype: str = "bfloat16"
     seed: int = 42
+    eval_batch_size: int = 32
     eval_every_steps: int = 50
+    eval_recipes: List[str] = field(default_factory=lambda: ["gsm8k_test"])
+    eval_primary_recipe: str = "gsm8k_test"
     eval_split: str = "test"
     eval_max_samples: int = 100
     eval_k: List[int] = field(default_factory=lambda: [1, 8])
@@ -72,11 +80,7 @@ class Trainer(ABC):
         random.seed(config.seed)
         torch.manual_seed(config.seed)
 
-        self.train_examples = load_gsm8k(
-            split=config.split,
-            max_samples=config.max_samples,
-            seed=config.seed,
-        )
+        self.train_examples = self._load_train_examples(config)
         self.policy, self.reference = load_policy_and_reference(
             config.model_path, dtype=config.dtype
         )
@@ -95,7 +99,22 @@ class Trainer(ABC):
                 config=vars(config),
             )
 
-    def _sample_batch(self, step: int) -> List[Gsm8kExample]:
+    def _load_train_examples(self, config: TrainerConfig) -> List[VerifiableExample]:
+        if config.recipe:
+            return load_recipe(
+                recipe=config.recipe,
+                max_samples=config.max_samples,
+                seed=config.seed,
+            )
+        dataset_name = config.dataset_name or "gsm8k"
+        return load_dataset_by_name(
+            name=dataset_name,
+            split=config.split,
+            max_samples=config.max_samples,
+            seed=config.seed,
+        )
+
+    def _sample_batch(self, step: int) -> List[VerifiableExample]:
         rng = random.Random(self.config.seed + step)
         return rng.sample(self.train_examples, k=min(self.config.batch_size, len(self.train_examples)))
 
@@ -114,7 +133,7 @@ class Trainer(ABC):
             log_string = ""
             for k, v in step_metrics.items():
                 log_string += f"{k}={v:.5f} "
-            print(
+            logger.info(
                 f"step {step}/{cfg.max_steps} loss={step_metrics['loss']:.4f} "
                 f"{log_string}"
             )
@@ -133,8 +152,9 @@ class Trainer(ABC):
                         "step": step,
                         "stage": stage,
                         "example_id": ex.example_id,
+                        "source": ex.source,
                         "question": ex.question,
-                        "ground_truth": extract_answer(ex.answer),
+                        "ground_truth": ex.answer,
                         "first_completion": comp_list[0],
                         "reward": rew_row[0].item(),
                         "num_correct": num_correct,
@@ -151,31 +171,54 @@ class Trainer(ABC):
         ...
 
     def eval(self, cfg: TrainerConfig, last_eval_metrics: dict, step: int) -> dict:
-        eval_metrics = evaluate_gsm8k_quick(
-            loaded=self.policy,
-            split=cfg.eval_split,
-            max_samples=cfg.eval_max_samples,
-            n_generations=cfg.eval_n_generations,
-            k_values=cfg.eval_k,
-            max_new_tokens=cfg.eval_max_new_tokens,
-            temperature=cfg.temperature,
-            question_batch_size=cfg.batch_size * 2 ,
-            seed=cfg.seed + step,
-        )
-        print(f"  eval pass@1={eval_metrics.get('pass@1', 0):.4f}")
+        all_eval: dict = {}
+        flat_wandb: dict = {}
+
+        for recipe in cfg.eval_recipes:
+            eval_metrics = evaluate_recipe_quick(
+                loaded=self.policy,
+                recipe=recipe,
+                max_samples=cfg.eval_max_samples,
+                n_generations=cfg.eval_n_generations,
+                k_values=cfg.eval_k,
+                max_new_tokens=cfg.eval_max_new_tokens,
+                temperature=cfg.temperature,
+                question_batch_size=cfg.eval_batch_size,
+                seed=cfg.seed + step,
+            )
+            all_eval[recipe] = eval_metrics
+            pass_at_1 = eval_metrics.get("pass@1", eval_metrics.get("accuracy", 0.0))
+            logger.info(f"  eval [{recipe}] pass@1={pass_at_1:.4f}")
+            for key, value in eval_metrics.items():
+                if key in {"by_source", "k_values", "method"}:
+                    continue
+                if isinstance(value, (int, float)):
+                    flat_wandb[f"{recipe}/{key}"] = value
+
         if self.wandb is not None:
-            self.wandb.log_eval(eval_metrics, step=step)
+            self.wandb.log_eval(flat_wandb, step=step)
+
         eval_path = self.output_dir / f"eval_step_{step}.json"
         with eval_path.open("w", encoding="utf-8") as f:
-            json.dump(eval_metrics, f, indent=2)
+            json.dump(all_eval, f, indent=2)
+
+        primary = all_eval.get(cfg.eval_primary_recipe, next(iter(all_eval.values())))
+        primary_pass_at_1 = primary.get("pass@1", primary.get("accuracy", 0.0))
 
         if step == 0:
-            last_eval_metrics = eval_metrics
+            last_eval_metrics = primary
 
-        if last_eval_metrics is None or (step > 0 and eval_metrics.get('pass@1', 0) > last_eval_metrics.get('pass@1', 0)):
+        last_pass_at_1 = 0.0
+        if last_eval_metrics is not None:
+            last_pass_at_1 = last_eval_metrics.get("pass@1", last_eval_metrics.get("accuracy", 0.0))
+
+        if last_eval_metrics is None or (step > 0 and primary_pass_at_1 > last_pass_at_1):
             ckpt = self._save_checkpoint(step)
-            print(f"  saved checkpoint: {ckpt} with pass@1={eval_metrics.get('pass@1', 0):.4f}")
-            last_eval_metrics = eval_metrics
+            logger.info(
+                f"  saved checkpoint: {ckpt} "
+                f"with {cfg.eval_primary_recipe} pass@1={primary_pass_at_1:.4f}"
+            )
+            last_eval_metrics = primary
 
         return last_eval_metrics
 
@@ -186,12 +229,12 @@ class ReinforceTrainer(Trainer):
         metrics_history: List[dict] = []
         self.optimizer.zero_grad()
 
-        # last_eval_metrics = self.eval(cfg, {}, 0)
-        last_eval_metrics = None
+        last_eval_metrics = self.eval(cfg, {}, 0)
+        # last_eval_metrics = None
 
         for step in range(1, cfg.max_steps + 1):
             batch = self._sample_batch(step)
-            _prompts, completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = generate_rollouts(
+            _prompts, completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, _ = generate_rollouts(
                 loaded=self.policy,
                 examples=batch,
                 n_generations=cfg.n_generations,
@@ -321,7 +364,7 @@ class GRPOTrainer(Trainer):
                 )
                 if loss_metrics["num_loss_terms"] == 0:
                     if epoch_idx == 0:
-                        print(
+                        logger.info(
                             f"  step {step}: skipping policy update "
                             "(all group advantages are ~0; uniform rewards within groups)"
                         )

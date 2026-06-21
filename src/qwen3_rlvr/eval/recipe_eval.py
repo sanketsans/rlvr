@@ -63,13 +63,14 @@ def evaluate_recipe_quick(
     try:
         for start in tqdm(range(0, len(examples), question_batch_size), desc="Generating rollouts"):
             batch = examples[start : start + question_batch_size]
-            _, completions, _, _, _ = generate_rollouts(
+            _, completions, _, _, _, _ = generate_rollouts(
                 loaded=loaded,
                 examples=batch,
                 n_generations=n_generations,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 seed=seed + start,
+                tokenize_outputs=False,
             )
             for ex, comp_list in zip(batch, completions):
                 mask = [answers_match(c, ex.answer) for c in comp_list]

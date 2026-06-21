@@ -164,13 +164,14 @@ def evaluate_pass_at_k(
 
     for batch_examples in batched(iterator, question_batch_size):
         # prompts = [format_prompt(loaded.tokenizer, ex.messages) for ex in batch_examples]
-        _prompts, completions, _, _, _ = generate_rollouts(
+        _prompts, completions, _, _, _, _ = generate_rollouts(
             loaded=loaded,
             examples=batch_examples,
             n_generations=n_generations,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             seed=seed,
+            tokenize_outputs=False,
         )
         correct_masks = [
             [answers_match(c, ex.answer) for c in c_list]
