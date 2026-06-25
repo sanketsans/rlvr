@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gc
 import json
-import math
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,23 +11,23 @@ from typing import Dict, List, Optional
 
 import torch
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from qwen3_rlvr.model.load import load_model_and_tokenizer, LoadedModel
+from qwen3_rlvr.eval.recipe_eval import evaluate_recipe_quick
+from qwen3_rlvr.logging.logger import setup_logger
 from qwen3_rlvr.logging.wandb_sft import SFTWandbLogger
+from qwen3_rlvr.model.load import LoadedModel, load_model_and_tokenizer
 from qwen3_rlvr.sft.curriculum import (
+    CurriculumConfig,
+    CurriculumSchedule,
     build_problem_groups,
     curriculum_batch_indices,
     schedule_for_phase,
-    CurriculumConfig,
-    CurriculumSchedule,
 )
-from qwen3_rlvr.sft.dataset import load_gsm8k_sft, load_sft_from_manifest, SFTTokenDataset, _collate
-from qwen3_rlvr.eval.recipe_eval import evaluate_recipe_quick
-from qwen3_rlvr.logging.logger import setup_logger
+from qwen3_rlvr.sft.dataset import SFTTokenDataset, _collate, load_gsm8k_sft, load_sft_from_manifest
 from qwen3_rlvr.sft.scheduler import get_cosine_schedule_with_warmup
+
 logger = setup_logger(__name__)
 
 
@@ -137,9 +136,7 @@ class SFTTrainer:
         pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
         self.pad_token_id = pad_token_id
         self.collate_fn = lambda batch: _collate(batch, pad_token_id)
-        self.use_curriculum_sampling = (
-            config.problem_weighted_sampling or curriculum_cfg.enabled
-        )
+        self.use_curriculum_sampling = config.problem_weighted_sampling or curriculum_cfg.enabled
         if not self.use_curriculum_sampling:
             self.dataloader = DataLoader(
                 self.token_dataset,
@@ -157,11 +154,12 @@ class SFTTrainer:
         self.scheduler = None
         if config.lr_scheduler == "cosine":
             self.scheduler = get_cosine_schedule_with_warmup(
-                optimizer=self.optimizer, 
-                warmup_ratio=config.warmup_ratio, 
-                num_training_steps=config.max_steps, 
-                grad_accum_steps=config.grad_accum_steps, 
-                min_lr_ratio=config.min_lr_ratio)
+                optimizer=self.optimizer,
+                warmup_ratio=config.warmup_ratio,
+                num_training_steps=config.max_steps,
+                grad_accum_steps=config.grad_accum_steps,
+                min_lr_ratio=config.min_lr_ratio,
+            )
 
         self.wandb: Optional[SFTWandbLogger] = None
         if config.wandb_project:
@@ -393,8 +391,7 @@ class SFTTrainer:
             "steps_per_phase": self.steps_per_phase,
             "phases": self.curriculum_cfg.phases,
             "problem_counts": {
-                difficulty: len(groups)
-                for difficulty, groups in self.problem_groups[0].items()
+                difficulty: len(groups) for difficulty, groups in self.problem_groups[0].items()
             },
         }
         with (self.output_dir / "curriculum_state.json").open("w", encoding="utf-8") as f:

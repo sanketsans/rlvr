@@ -5,29 +5,28 @@ from __future__ import annotations
 import json
 import random
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Any
-from collections import defaultdict
+from typing import Any, List, Optional
 
 import numpy as np
 import torch
 from torch.optim import AdamW
+from tqdm import tqdm
 
 from qwen3_rlvr.data.base import VerifiableExample
 from qwen3_rlvr.data.recipe import load_dataset_by_name, load_recipe
 from qwen3_rlvr.eval.recipe_eval import evaluate_recipe_quick
 from qwen3_rlvr.generation.rollout import generate_rollouts
 from qwen3_rlvr.logging.artifacts import SampleLogger, training_stage
+from qwen3_rlvr.logging.logger import setup_logger
 from qwen3_rlvr.logging.wandb_grpo import GRPO_WandbLogger
 from qwen3_rlvr.model.load import load_policy_and_reference
 from qwen3_rlvr.rewards.exact_match import exact_match_rewards
-from qwen3_rlvr.rl.grpo import compute_advantages, compute_policy_loss, GRPOBatch
-from qwen3_rlvr.logging.logger import setup_logger
+from qwen3_rlvr.rl.grpo import GRPOBatch, compute_advantages, compute_policy_loss
 
 logger = setup_logger(__name__)
-
-from tqdm import tqdm
 
 
 @dataclass
@@ -58,8 +57,8 @@ class TrainerConfig:
     eval_k: List[int] = field(default_factory=lambda: [1, 8])
     eval_n_generations: int = 8
     eval_max_new_tokens: int = 256
-    reinforce: bool = False # whether to use reinforce training
-    grpo_epochs: int = 1 # number of epochs to run GRPO policy updates / rollouts for each batch
+    reinforce: bool = False  # whether to use reinforce training
+    grpo_epochs: int = 1  # number of epochs to run GRPO policy updates / rollouts for each batch
     log_every_steps: int = 10
     log_samples_every: int = 50
     sample_table_size: int = 8
@@ -116,7 +115,9 @@ class Trainer(ABC):
 
     def _sample_batch(self, step: int) -> List[VerifiableExample]:
         rng = random.Random(self.config.seed + step)
-        return rng.sample(self.train_examples, k=min(self.config.batch_size, len(self.train_examples)))
+        return rng.sample(
+            self.train_examples, k=min(self.config.batch_size, len(self.train_examples))
+        )
 
     def _save_checkpoint(self, step: int) -> Path:
         ckpt = self.output_dir / "checkpoints" / f"step_{step}"
@@ -128,15 +129,20 @@ class Trainer(ABC):
             json.dump(meta, f, indent=2)
         return ckpt
 
-    def log_samples(self, cfg: TrainerConfig, step_metrics: dict, step: int, batch: list[Any], completions: list[list[str]], grpo_batch: GRPOBatch) -> None:
+    def log_samples(
+        self,
+        cfg: TrainerConfig,
+        step_metrics: dict,
+        step: int,
+        batch: list[Any],
+        completions: list[list[str]],
+        grpo_batch: GRPOBatch,
+    ) -> None:
         if step % cfg.log_every_steps == 0:
             log_string = ""
             for k, v in step_metrics.items():
                 log_string += f"{k}={v:.5f} "
-            logger.info(
-                f"step {step}/{cfg.max_steps} loss={step_metrics['loss']:.4f} "
-                f"{log_string}"
-            )
+            logger.info(f"step {step}/{cfg.max_steps} loss={step_metrics['loss']:.4f} {log_string}")
 
         if self.wandb is not None:
             self.wandb.log_train(step_metrics, step=step)
@@ -160,15 +166,13 @@ class Trainer(ABC):
                         "num_correct": num_correct,
                     }
                 )
-       
+
             self.sample_logger.append_many(records[: cfg.sample_table_size])
             if self.wandb is not None:
                 self.wandb.log_samples(records[: cfg.sample_table_size], step=step, stage=stage)
 
-
     @abstractmethod
-    def train(self) -> None:
-        ...
+    def train(self) -> None: ...
 
     def eval(self, cfg: TrainerConfig, last_eval_metrics: dict, step: int) -> dict:
         all_eval: dict = {}
@@ -234,7 +238,14 @@ class ReinforceTrainer(Trainer):
 
         for step in range(1, cfg.max_steps + 1):
             batch = self._sample_batch(step)
-            _prompts, completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, _ = generate_rollouts(
+            (
+                _prompts,
+                completions,
+                tokenized_input_ids,
+                tokenized_attention_mask,
+                tokenized_completion_mask,
+                _,
+            ) = generate_rollouts(
                 loaded=self.policy,
                 examples=batch,
                 n_generations=cfg.n_generations,
@@ -277,7 +288,9 @@ class ReinforceTrainer(Trainer):
                 "frac_correct": rewards.mean().item(),
                 "advantage_mean": advantages.mean().item(),
                 "advantage_std": advantages.std().item(),
-                "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values).mean().item(),
+                "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values)
+                .mean()
+                .item(),
                 **{f"loss/{k}": v for k, v in loss_metrics.items()},
             }
 
@@ -312,12 +325,19 @@ class GRPOTrainer(Trainer):
         cfg = self.config
         metrics_history: List[dict] = []
         self.optimizer.zero_grad()
-        
+
         last_eval_metrics = self.eval(cfg, {}, 0)
         # last_eval_metrics = None
         for step in tqdm(range(1, cfg.max_steps + 1), desc="Training GRPO"):
             batch = self._sample_batch(step)
-            _prompts, completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, old_logprobs = generate_rollouts(
+            (
+                _prompts,
+                completions,
+                tokenized_input_ids,
+                tokenized_attention_mask,
+                tokenized_completion_mask,
+                old_logprobs,
+            ) = generate_rollouts(
                 loaded=self.policy,
                 examples=batch,
                 n_generations=cfg.n_generations,
@@ -349,7 +369,9 @@ class GRPOTrainer(Trainer):
                 "frac_correct": rewards.mean().item(),
                 "advantage_mean": advantages.mean().item(),
                 "advantage_std": advantages.std().item(),
-                "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values).mean().item(),
+                "group_reward_spread": (rewards.max(dim=1).values - rewards.min(dim=1).values)
+                .mean()
+                .item(),
             }
 
             grpo_epoch_metrics = defaultdict(list)
@@ -369,20 +391,30 @@ class GRPOTrainer(Trainer):
                             "(all group advantages are ~0; uniform rewards within groups)"
                         )
                     continue
-                grpo_epoch_metrics['loss'].append(loss.item())
+                grpo_epoch_metrics["loss"].append(loss.item())
                 for k, v in loss_metrics.items():
                     grpo_epoch_metrics[k].append(v)
-                
+
                 loss.backward()
                 if cfg.grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(self.policy.model.parameters(), cfg.grad_clip)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            step_metrics.update({
-                "loss": np.mean(grpo_epoch_metrics['loss']).item(),
-                **{f"loss/{k}": np.mean(v).item() for k, v in grpo_epoch_metrics.items()},
-            })
+            if grpo_epoch_metrics["loss"]:
+                step_metrics.update(
+                    {
+                        "num_updates": len(grpo_epoch_metrics["loss"]),
+                        "loss": float(np.mean(grpo_epoch_metrics["loss"])),
+                        **{f"loss/{k}": float(np.mean(v)) for k, v in grpo_epoch_metrics.items()},
+                    }
+                )
+            else:
+                # Every epoch was skipped: all group advantages were ~0 (uniform
+                # rewards within groups), so no policy update was applied. Record
+                # that explicitly rather than calling np.mean([]), which emits a
+                # "Mean of empty slice" RuntimeWarning and yields NaN.
+                step_metrics.update({"num_updates": 0, "loss": float("nan")})
             metrics_history.append(step_metrics)
             self.log_samples(cfg, step_metrics, step, batch, completions, grpo_batch)
 

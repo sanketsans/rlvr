@@ -45,7 +45,7 @@ SWEEP_GRID = {
     "lr": [1e-6, 5e-7, 1e-5],
     "batch_size": [4],
     "grad_accum_steps": [1],
-    'max_steps': [500],
+    "max_steps": [500],
 }
 
 
@@ -55,6 +55,7 @@ class Experiment:
     batch_size: int
     grad_accum_steps: int
     max_steps: int
+
     @property
     def effective_batch_size(self) -> int:
         return self.batch_size * self.grad_accum_steps
@@ -92,7 +93,10 @@ def _format_lr(lr: float) -> str:
 def build_experiments(grid: dict[str, Sequence]) -> List[Experiment]:
     keys = ["lr", "batch_size", "grad_accum_steps", "max_steps"]
     combos = itertools.product(*(grid[k] for k in keys))
-    return [Experiment(lr=lr, batch_size=bs, grad_accum_steps=ga, max_steps=ms) for lr, bs, ga, ms in combos]
+    return [
+        Experiment(lr=lr, batch_size=bs, grad_accum_steps=ga, max_steps=ms)
+        for lr, bs, ga, ms in combos
+    ]
 
 
 def _sky_launch_cmd(exp: Experiment, wandb_api_key: str | None, *, yes: bool) -> List[str]:
@@ -162,16 +166,19 @@ def _filter_experiments(experiments: Iterable[Experiment], only: str | None) -> 
     wanted = {item.strip() for item in only.split(";") if item.strip()}
     selected = [exp for exp in experiments if exp.selector in wanted]
     if not selected:
-        raise SystemExit(f"No experiments matched --only. Available selectors:\n" + "\n".join(
-            f"  {exp.selector}" for exp in experiments
-        ))
+        raise SystemExit(
+            "No experiments matched --only. Available selectors:\n"
+            + "\n".join(f"  {exp.selector}" for exp in experiments)
+        )
     return selected
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Launch Phase 1 GRPO hyperparameter sweep.")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing")
-    parser.add_argument("--local", action="store_true", help="Run train_grpo.py locally instead of SkyPilot")
+    parser.add_argument(
+        "--local", action="store_true", help="Run train_grpo.py locally instead of SkyPilot"
+    )
     parser.add_argument(
         "--only",
         type=str,
@@ -247,7 +254,9 @@ def main() -> None:
             if code != 0:
                 raise SystemExit(f"Failed to submit job: {name}")
     else:
-        print(f"\nSubmitting {len(jobs)} SkyPilot jobs in parallel (Kueue will schedule as GPUs free)...")
+        print(
+            f"\nSubmitting {len(jobs)} SkyPilot jobs in parallel (Kueue will schedule as GPUs free)..."
+        )
         _launch_sky_jobs_parallel(jobs, max_workers=args.max_parallel)
 
     mode = "local runs" if args.local else "SkyPilot launches"

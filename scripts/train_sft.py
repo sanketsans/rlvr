@@ -14,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from qwen3_rlvr.env import load_project_env
-from qwen3_rlvr.sft.trainer import CurriculumConfig, SFTConfig, SFTTrainer
 from qwen3_rlvr.logging import setup_logger
 from qwen3_rlvr.logging.resource_monitor import ResourceMonitor
+from qwen3_rlvr.sft.trainer import CurriculumConfig, SFTConfig, SFTTrainer
 
 logger = setup_logger(__name__)
 
@@ -71,7 +71,9 @@ def _build_curriculum_config(dataset_cfg: dict) -> Optional[CurriculumConfig]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="SFT on rejection-sampling curated data.")
     parser.add_argument("--config", type=str, required=True)
-    parser.add_argument("--override", action="append", default=[], help="key=value OmegaConf override")
+    parser.add_argument(
+        "--override", action="append", default=[], help="key=value OmegaConf override"
+    )
     parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
@@ -93,9 +95,8 @@ def main() -> None:
     curriculum_cfg = _build_curriculum_config(dataset_cfg)
     eval_cfg = _get(cfg, "eval", default={}) or {}
 
-    processed_prompt_ids = (
-        dataset_cfg.get("processed_prompt_ids")
-        or dataset_cfg.get("processed_prompt_ids_path")
+    processed_prompt_ids = dataset_cfg.get("processed_prompt_ids") or dataset_cfg.get(
+        "processed_prompt_ids_path"
     )
 
     trainer_cfg = SFTConfig(
@@ -147,7 +148,9 @@ def main() -> None:
     if curriculum_cfg and curriculum_cfg.enabled:
         logger.info(f"Curriculum enabled, steps/phase: {curriculum_cfg.steps_per_phase or 'auto'}")
     logger.info(f"Output: {trainer_cfg.output_dir}")
-    with ResourceMonitor(trainer_cfg.output_dir + "/resource_monitor.json", interval_s=2.0, label="sft") as monitor:
+    with ResourceMonitor(
+        trainer_cfg.output_dir + "/resource_monitor.json", interval_s=2.0, label="sft"
+    ) as monitor:
         SFTTrainer(trainer_cfg).train()
     monitor.print_summary()
 

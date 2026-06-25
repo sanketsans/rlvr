@@ -1,9 +1,12 @@
-from qwen3_rlvr.eval.pass_at_k import _decode_generated_batch
+from qwen3_rlvr.generation.rollout import _decode_generated_batch
 
 
 class _FakeTokenizer:
     def decode(self, token_ids, skip_special_tokens=True):
         return "".join(chr(int(t) + ord("a")) for t in token_ids if int(t) > 0)
+
+    def batch_decode(self, sequences, skip_special_tokens=True):
+        return [self.decode(seq, skip_special_tokens=skip_special_tokens) for seq in sequences]
 
 
 def test_decode_generated_batch():

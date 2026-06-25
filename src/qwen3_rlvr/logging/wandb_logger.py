@@ -31,7 +31,9 @@ def log_pass_at_k_to_wandb(
         wandb.log({f"eval/{key}": value})
     wandb.log({"eval/avg_num_correct": result.avg_num_correct})
 
-    table = wandb.Table(columns=["example_id", "question", "ground_truth", "num_correct", "first_completion"])
+    table = wandb.Table(
+        columns=["example_id", "question", "ground_truth", "num_correct", "first_completion"]
+    )
     for row in result.per_question[: min(50, len(result.per_question))]:
         table.add_data(
             row.example_id,

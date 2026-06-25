@@ -7,18 +7,18 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import torch
-from torch.utils.data import Dataset
 from datasets import load_dataset
+from torch.utils.data import Dataset
 
 from qwen3_rlvr.data.base import SFTExample
 from qwen3_rlvr.generation.prompts import format_prompt
+from qwen3_rlvr.logging.logger import setup_logger
 from qwen3_rlvr.sft.curation import (
     CuratedRow,
     classify_difficulty,
     load_prompt_success_ratios,
     load_rows_jsonl,
 )
-from qwen3_rlvr.logging.logger import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -84,16 +84,22 @@ def _collate(batch: List[dict], pad_token_id: int) -> dict:
         input_ids.append(
             torch.cat(
                 [
-                    torch.full((pad_len,), pad_token_id, dtype=torch.long), # replicate the pad token to the left of the input_ids
-                    item["input_ids"], # these are the input_ids over prompt + completion tokens. 
+                    torch.full(
+                        (pad_len,), pad_token_id, dtype=torch.long
+                    ),  # replicate the pad token to the left of the input_ids
+                    item["input_ids"],  # these are the input_ids over prompt + completion tokens.
                 ]
             )
         )
         attention_mask.append(
             torch.cat(
                 [
-                    torch.zeros(pad_len, dtype=torch.long), # replicate the pad token to the left of the attention_mask
-                    item["attention_mask"], # these are the attention_mask over prompt + completion tokens. 
+                    torch.zeros(
+                        pad_len, dtype=torch.long
+                    ),  # replicate the pad token to the left of the attention_mask
+                    item[
+                        "attention_mask"
+                    ],  # these are the attention_mask over prompt + completion tokens.
                 ]
             )
         )
@@ -101,7 +107,7 @@ def _collate(batch: List[dict], pad_token_id: int) -> dict:
             torch.cat(
                 [
                     torch.full((pad_len,), -100, dtype=torch.long),
-                    item["labels"], # these are the labels over prompt + completion tokens. 
+                    item["labels"],  # these are the labels over prompt + completion tokens.
                 ]
             )
         )
@@ -110,7 +116,6 @@ def _collate(batch: List[dict], pad_token_id: int) -> dict:
         "attention_mask": torch.stack(attention_mask),
         "labels": torch.stack(labels),
     }
-
 
 
 def load_gsm8k_original_sft(

@@ -7,8 +7,9 @@ from qwen3_rlvr.sft.curation import (
     write_manifest,
 )
 from qwen3_rlvr.sft.dataset import load_gsm8k_sft
-from qwen3_rlvr.sft.trainer import CurriculumConfig, SFTConfig, SFTTrainer
 from qwen3_rlvr.sft.scheduler import get_cosine_schedule_with_warmup
+from qwen3_rlvr.sft.trainer import CurriculumConfig, SFTConfig, SFTTrainer
+
 __all__ = [
     "CuratedRow",
     "CurriculumConfig",

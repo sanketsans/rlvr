@@ -7,7 +7,6 @@ import subprocess
 import threading
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -165,8 +164,12 @@ class ResourceMonitor:
             )
 
         cpu_vals = [s.cpu_percent for s in self._samples]
-        gpu_alloc = [s.gpu_mem_allocated_gb for s in self._samples if s.gpu_mem_allocated_gb is not None]
-        gpu_reserved = [s.gpu_mem_reserved_gb for s in self._samples if s.gpu_mem_reserved_gb is not None]
+        gpu_alloc = [
+            s.gpu_mem_allocated_gb for s in self._samples if s.gpu_mem_allocated_gb is not None
+        ]
+        gpu_reserved = [
+            s.gpu_mem_reserved_gb for s in self._samples if s.gpu_mem_reserved_gb is not None
+        ]
         gpu_used = [s.gpu_mem_used_gb for s in self._samples if s.gpu_mem_used_gb is not None]
         gpu_util = [s.gpu_util_percent for s in self._samples if s.gpu_util_percent is not None]
 

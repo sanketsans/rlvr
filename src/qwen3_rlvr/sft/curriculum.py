@@ -8,6 +8,7 @@ from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from qwen3_rlvr.data.base import SFTExample
 
+
 @dataclass
 class CurriculumConfig:
     enabled: bool = False
@@ -27,6 +28,7 @@ class CurriculumConfig:
             phases=self.phases,
             use_uniform_final=True,
         )
+
 
 @dataclass(frozen=True)
 class ProblemGroup:
@@ -49,6 +51,7 @@ class CurriculumSchedule:
     # original_fraction: float = 0.2 # not used anymore
     use_uniform_final: bool = True
 
+
 def build_problem_groups(
     examples: Sequence[SFTExample],
 ) -> tuple[
@@ -66,8 +69,8 @@ def build_problem_groups(
         all_groups: List of all ProblemGroups. This is used for uniform sampling when all phases are over or no probabilities are provided.
     """
 
-    examples_by_prompt: Dict[int, List[int]] = {} # contains all examples for each prompt
-    prompt_difficulty: Dict[int, str] = {} # difficulty of each prompt
+    examples_by_prompt: Dict[int, List[int]] = {}  # contains all examples for each prompt
+    prompt_difficulty: Dict[int, str] = {}  # difficulty of each prompt
 
     for idx, ex in enumerate(examples):
         if ex.prompt_id is None:
@@ -130,13 +133,13 @@ def sample_example_index(
     problems_by_difficulty: Dict[str, List[ProblemGroup]],
     all_groups: List[ProblemGroup],
 ) -> int:
-    f"""
+    """
     Sample one example: pick a problem first, then one accepted solution.
 
     If no probabilities are provided, sample a random problem from all problems.
     If probabilities are provided, sample a difficulty from the probabilities, then sample a problem from the problems by difficulty.
     Then sample a random example from the problem.
-    Did a basic check : 
+    Did a basic check :
     from collections import Counter
     counter = Counter()
 
@@ -144,7 +147,7 @@ def sample_example_index(
         diff = _sample_difficulty(rng, _normalize_probs(probs))
         counter[diff] += 1
 
-    counter is 80% easy and 20% mid based on phase 0 probabilities. 
+    counter is 80% easy and 20% mid based on phase 0 probabilities.
 
     Args:
         rng: Random number generator.
@@ -187,9 +190,7 @@ class CurriculumExampleIterator:
         self.steps_per_phase = max(1, steps_per_phase)
         self.seed = seed
         self.step = 0
-        self.problems_by_difficulty, self.all_groups = build_problem_groups(
-            examples
-        )
+        self.problems_by_difficulty, self.all_groups = build_problem_groups(examples)
 
     @property
     def phase(self) -> int:
@@ -219,9 +220,7 @@ def curriculum_batch_indices(
     batch_size: int,
     step: int,
     seed: int,
-    problem_groups: Optional[
-        Tuple[Dict[str, List[ProblemGroup]], List[ProblemGroup]]
-    ] = None,
+    problem_groups: Optional[Tuple[Dict[str, List[ProblemGroup]], List[ProblemGroup]]] = None,
 ) -> List[int]:
     phase = step // max(1, steps_per_phase)
     probs = schedule_for_phase(schedule, phase)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence, Optional
+from typing import List, Optional, Sequence
 
 import torch
 
@@ -10,6 +10,19 @@ from qwen3_rlvr.data.base import VerifiableExample
 from qwen3_rlvr.generation.prompts import format_prompt
 from qwen3_rlvr.model.load import LoadedModel
 from qwen3_rlvr.rl.grpo import batched_sequence_log_probs, batched_tokenize_prompt_completion
+
+
+def _decode_generated_batch(tokenizer, outputs, prompt_len, batch_size, n_generations):
+    """Decode a flat ``generate()`` output tensor into per-prompt completion lists.
+
+    ``outputs`` has shape ``(batch_size * n_generations, seq_len)``; the first
+    ``prompt_len`` tokens are the prompt and are stripped before decoding. The
+    flat list of decoded strings is then regrouped so result[i] holds the
+    ``n_generations`` completions for prompt ``i``.
+    """
+    completion_ids = outputs[:, prompt_len:]
+    decoded = tokenizer.batch_decode(completion_ids, skip_special_tokens=True)
+    return [decoded[i * n_generations : (i + 1) * n_generations] for i in range(batch_size)]
 
 
 def generate_rollouts(
@@ -21,7 +34,14 @@ def generate_rollouts(
     seed: int,
     return_logprobs: bool = False,
     tokenize_outputs: bool = True,
-) -> tuple[List[str], List[List[str]], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+) -> tuple[
+    List[str],
+    List[List[str]],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+]:
     """Return prompts and completions per example (list of N strings each).
     If return_logprobs is True, return the log probabilities of the completions.
     Set tokenize_outputs=False for eval-only generation to avoid extra GPU tensors.
@@ -65,23 +85,16 @@ def generate_rollouts(
         model.train()
 
     batch_size = len(prompts)
-    completion_ids = outputs[:, prompt_len:]
-    decoded = tokenizer.batch_decode(
-        completion_ids,
-        skip_special_tokens=True,
+    all_completions = _decode_generated_batch(
+        tokenizer, outputs, prompt_len, batch_size, n_generations
     )
-    del outputs, completion_ids
-
-    all_completions = [
-        decoded[i * n_generations:(i + 1) * n_generations]
-        for i in range(batch_size)
-    ]
+    del outputs
 
     if not tokenize_outputs:
         return prompts, all_completions, None, None, None, None
 
-    tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = batched_tokenize_prompt_completion(
-        tokenizer, prompts, all_completions, device
+    tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = (
+        batched_tokenize_prompt_completion(tokenizer, prompts, all_completions, device)
     )
     if return_logprobs:
         with torch.no_grad():
@@ -91,5 +104,19 @@ def generate_rollouts(
                 tokenized_attention_mask=tokenized_attention_mask,
                 tokenized_completion_mask=tokenized_completion_mask,
             )
-        return prompts, all_completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, logprobs
-    return prompts, all_completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, None
+        return (
+            prompts,
+            all_completions,
+            tokenized_input_ids,
+            tokenized_attention_mask,
+            tokenized_completion_mask,
+            logprobs,
+        )
+    return (
+        prompts,
+        all_completions,
+        tokenized_input_ids,
+        tokenized_attention_mask,
+        tokenized_completion_mask,
+        None,
+    )
