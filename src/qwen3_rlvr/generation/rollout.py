@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence, Optional
+from typing import List, Optional, Sequence
 
 import torch
 
@@ -21,7 +21,14 @@ def generate_rollouts(
     seed: int,
     return_logprobs: bool = False,
     tokenize_outputs: bool = True,
-) -> tuple[List[str], List[List[str]], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+) -> tuple[
+    List[str],
+    List[List[str]],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+    Optional[torch.Tensor],
+]:
     """Return prompts and completions per example (list of N strings each).
     If return_logprobs is True, return the log probabilities of the completions.
     Set tokenize_outputs=False for eval-only generation to avoid extra GPU tensors.
@@ -73,15 +80,14 @@ def generate_rollouts(
     del outputs, completion_ids
 
     all_completions = [
-        decoded[i * n_generations:(i + 1) * n_generations]
-        for i in range(batch_size)
+        decoded[i * n_generations : (i + 1) * n_generations] for i in range(batch_size)
     ]
 
     if not tokenize_outputs:
         return prompts, all_completions, None, None, None, None
 
-    tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = batched_tokenize_prompt_completion(
-        tokenizer, prompts, all_completions, device
+    tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask = (
+        batched_tokenize_prompt_completion(tokenizer, prompts, all_completions, device)
     )
     if return_logprobs:
         with torch.no_grad():
@@ -91,5 +97,19 @@ def generate_rollouts(
                 tokenized_attention_mask=tokenized_attention_mask,
                 tokenized_completion_mask=tokenized_completion_mask,
             )
-        return prompts, all_completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, logprobs
-    return prompts, all_completions, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask, None
+        return (
+            prompts,
+            all_completions,
+            tokenized_input_ids,
+            tokenized_attention_mask,
+            tokenized_completion_mask,
+            logprobs,
+        )
+    return (
+        prompts,
+        all_completions,
+        tokenized_input_ids,
+        tokenized_attention_mask,
+        tokenized_completion_mask,
+        None,
+    )

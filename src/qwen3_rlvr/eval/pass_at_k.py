@@ -6,19 +6,15 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from itertools import islice
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
-import torch
 from tqdm import tqdm
 
-from itertools import islice
-
-from qwen3_rlvr.data.base import VerifiableExample
 from qwen3_rlvr.data.recipe import load_dataset_by_name, load_recipe
-from qwen3_rlvr.generation.prompts import format_prompt
 from qwen3_rlvr.generation.rollout import generate_rollouts
-from qwen3_rlvr.model.load import LoadedModel, load_model_and_tokenizer
+from qwen3_rlvr.model.load import load_model_and_tokenizer
 from qwen3_rlvr.rewards.extract import answers_match
 
 
@@ -60,6 +56,7 @@ class PassAtKResult:
             "created_at": self.created_at,
         }
 
+
 def batched(iterable, batch_size):
     iterator = iter(iterable)
 
@@ -69,14 +66,13 @@ def batched(iterable, batch_size):
             break
         yield batch
 
+
 def compute_pass_at_k(
-    correctness_per_generation: Sequence[bool],
-    k_values: Sequence[int],
-    method: str = "unbiased"
+    correctness_per_generation: Sequence[bool], k_values: Sequence[int], method: str = "unbiased"
 ) -> Dict[str, float]:
     """
     Compute pass@k metric(s) for a single problem, given a set of generations.
-    
+
     Args:
         correctness_per_generation: Sequence of booleans, where each value indicates
             whether a single generation (sample) is correct (True) or not (False).
@@ -96,9 +92,7 @@ def compute_pass_at_k(
     for k in k_values:
         # Cannot compute pass@k if fewer than k generations are provided
         if k > num_generations:
-            raise ValueError(
-                f"k={k} requires at least {k} generations, got {num_generations}"
-            )
+            raise ValueError(f"k={k} requires at least {k} generations, got {num_generations}")
 
         if method == "first_k":
             # score is 1.0 if any of the first k generations is correct, 0.0 otherwise
@@ -113,7 +107,9 @@ def compute_pass_at_k(
                 score = 1.0
             else:
                 # Classic formula: 1 - (C(n-c, k) / C(n, k)), n=total generations, c=num correct
-                score = 1.0 - math.comb(num_generations - num_correct, k) / math.comb(num_generations, k)
+                score = 1.0 - math.comb(num_generations - num_correct, k) / math.comb(
+                    num_generations, k
+                )
         else:
             raise ValueError(f"Unknown pass@k method: {method}")
 
@@ -141,9 +137,7 @@ def evaluate_pass_at_k(
     if k_values is None:
         k_values = [1, 8]
     if n_generations < max(k_values):
-        raise ValueError(
-            f"n_generations={n_generations} must be >= max(k_values)={max(k_values)}"
-        )
+        raise ValueError(f"n_generations={n_generations} must be >= max(k_values)={max(k_values)}")
 
     if recipe:
         examples = load_recipe(recipe, max_samples=max_samples, seed=seed)
@@ -177,16 +171,15 @@ def evaluate_pass_at_k(
             [answers_match(c, ex.answer) for c in c_list]
             for c_list, ex in zip(completions, batch_examples)
         ]
-        q_metrics = [
-            compute_pass_at_k(cm, k_values, method=method)
-            for cm in correct_masks
-        ]
+        q_metrics = [compute_pass_at_k(cm, k_values, method=method) for cm in correct_masks]
 
         for q_metric in q_metrics:
             for key, value in q_metric.items():
                 aggregate_pass[key] += value
 
-        for ex, c_list, cm_list, q_metric in zip(batch_examples, completions, correct_masks, q_metrics):
+        for ex, c_list, cm_list, q_metric in zip(
+            batch_examples, completions, correct_masks, q_metrics
+        ):
             per_question.append(
                 QuestionResult(
                     example_id=ex.example_id,
@@ -197,7 +190,6 @@ def evaluate_pass_at_k(
                     num_correct=sum(cm_list),
                 )
             )
-   
 
     num_examples = len(per_question)
     for key in aggregate_pass:

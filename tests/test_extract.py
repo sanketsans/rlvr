@@ -7,6 +7,8 @@ def test_extract_hash_answer():
 
 
 def test_answers_match_numeric_variants():
-    assert answers_match("#### 42", "#### 42.0")
-    assert answers_match("The answer is 1,234", "#### 1234")
-    assert not answers_match("#### 41", "#### 42")
+    # `reference` is the canonical answer the dataset loaders already extracted
+    # (no "####" prefix); only the prediction is raw model output.
+    assert answers_match("#### 42", "42.0")
+    assert answers_match("The answer is 1,234", "1234")
+    assert not answers_match("#### 41", "42")

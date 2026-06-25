@@ -23,7 +23,7 @@ def load_aime(
     hub_id: str = "HuggingFaceH4/aime_2024",
 ) -> List[VerifiableExample]:
     # This only has 30 samples and is anyway called "train"set.
-    # But using this as the test for our AIME evals. 
+    # But using this as the test for our AIME evals.
 
     dataset = load_dataset(hub_id, split=split)
     if max_samples is not None and max_samples < len(dataset):
@@ -75,7 +75,9 @@ def load_aime_combined(
         rng = random.Random(seed)
         examples = rng.sample(examples, k=max_samples)
         examples = [
-            VerifiableExample(example_id=i, question=ex.question, answer=ex.answer, source=ex.source)
+            VerifiableExample(
+                example_id=i, question=ex.question, answer=ex.answer, source=ex.source
+            )
             for i, ex in enumerate(examples)
         ]
 

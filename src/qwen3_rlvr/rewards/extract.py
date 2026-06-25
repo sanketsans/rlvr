@@ -9,7 +9,6 @@ from typing import Optional
 from sympy import sympify
 from sympy.core.numbers import Number
 
-
 _NUM_RE = re.compile(r"-?\d[\d,]*\.?\d*")
 _HASH_RE = re.compile(r"####\s*(.+?)(?:\n|$)", re.MULTILINE)
 

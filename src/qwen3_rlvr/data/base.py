@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-
 SYSTEM_PROMPT = {
     "gsm8k": "You are a helpful assistant. Solve the math problem step by step. End your response with the final answer on its own line in the format: #### <answer>",
     "math": "You are a helpful assistant. Solve the math problem step by step, and put your final answer within '\\boxed{}'. <answer>",
     "aime": "You are a helpful assistant. Solve the math problem step by step, and put your final answer within '\\boxed{}'. <answer>",
 }
+
 
 @dataclass(frozen=True)
 class VerifiableExample:
@@ -25,6 +25,7 @@ class VerifiableExample:
             {"role": "system", "content": SYSTEM_PROMPT[self.source]},
             {"role": "user", "content": self.question},
         ]
+
 
 @dataclass(frozen=True)
 class SFTExample:

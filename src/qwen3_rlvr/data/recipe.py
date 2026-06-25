@@ -52,7 +52,9 @@ def list_recipes() -> List[str]:
     return sorted(RECIPES)
 
 
-def _subsample(examples: List[VerifiableExample], max_samples: int, seed: int) -> List[VerifiableExample]:
+def _subsample(
+    examples: List[VerifiableExample], max_samples: int, seed: int
+) -> List[VerifiableExample]:
     if max_samples >= len(examples):
         return examples
     rng = random.Random(seed)
@@ -98,9 +100,7 @@ def load_recipe(
             raise ValueError(f"Unknown dataset loader '{source.name}' in recipe '{recipe}'.")
         loader = LOADERS[source.name]
         per_source_cap = source.max_samples
-        loaded_groups.append(
-            loader(split=source.split, max_samples=per_source_cap, seed=seed)
-        )
+        loaded_groups.append(loader(split=source.split, max_samples=per_source_cap, seed=seed))
 
     if max_samples is None:
         merged: List[VerifiableExample] = []
@@ -109,7 +109,9 @@ def load_recipe(
         rng = random.Random(seed)
         rng.shuffle(merged)
         return [
-            VerifiableExample(example_id=i, question=ex.question, answer=ex.answer, source=ex.source)
+            VerifiableExample(
+                example_id=i, question=ex.question, answer=ex.answer, source=ex.source
+            )
             for i, ex in enumerate(merged)
         ]
 
