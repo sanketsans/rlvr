@@ -38,8 +38,8 @@ eval:
 
 logging:
   log_every_steps: 5
-  log_samples_every: 1
-  sample_table_size: 8
+  log_samples_every: 50
+  sample_table_size: 4
   wandb:
     project: rlvr
     entity: ${oc.env:WANDB_ENTITY,null}

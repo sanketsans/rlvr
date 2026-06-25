@@ -15,7 +15,7 @@ passk:
   max_new_tokens: 512
   dtype: bfloat16
   method: unbiased  # unbiased (standard) or first_k
-  question_batch_size: 8  # prompts per forward pass; increase until GPU ~80-90%
+  question_batch_size: 32  # prompts per forward pass; increase until GPU ~80-90%
 
 logging:
   wandb:

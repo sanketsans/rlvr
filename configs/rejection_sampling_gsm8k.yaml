@@ -1,0 +1,16 @@
+# Rejection sampling curation on full GSM8K train set
+# Override paths via env: MODEL_PATH, OUT_ROOT
+
+model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/gsm8k_rejection_sampling
+
+curation:
+  n_rollouts: 16
+  top_k: 2
+  temperature: 0.7
+  max_new_tokens: 512
+  batch_size: 64
+  dtype: bfloat16
+  max_samples: null  # null = full GSM8K train (~7473 prompts)
+
+seed: 42

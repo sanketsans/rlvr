@@ -1,7 +1,8 @@
 # Phase 0 — benchmark suite (greedy + best-of-n) across eval recipes
 # Override paths via env: MODEL_PATH, OUT_ROOT
 
-model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
+# model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
+model: /home/coder/Projects/rlvr/models/Qwen2.5-0.5B-SFT-p1-43_7
 output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/benchmark_baseline
 
 common:
