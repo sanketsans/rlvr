@@ -1,8 +1,8 @@
-# Phase 1 reinforce — GSM8K-only GRPO on Qwen3-4B-Instruct
-# Override paths via env: MODEL_PATH, OUT_ROOT
+# Phase 1 — GRPO on GSM8K (PPO-style clipped ratio + KL to frozen reference)
+# Default model: Qwen2.5-0.5B-Instruct. Override paths via env: MODEL_PATH, OUT_ROOT
 
-model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_grpo
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}/qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_grpo
 
 dataset:
   name: gsm8k

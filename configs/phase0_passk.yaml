@@ -1,7 +1,7 @@
-# Phase 0 — Pass@K baseline on Qwen3-4B-Instruct
+# Phase 0 — Pass@K baseline (default model: Qwen2.5-0.5B-Instruct)
 
-model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}
 
 dataset:
   name: gsm8k
