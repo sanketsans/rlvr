@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
-from qwen3_rlvr.rewards.extract import answers_match
 from qwen3_rlvr.logging.logger import setup_logger
+from qwen3_rlvr.rewards.extract import answers_match
 
 logger = setup_logger(__name__)
 
@@ -25,6 +25,7 @@ class CuratedRow:
     variant: str
     rank: int | None = None
     success_ratio: float | None = None
+
     def to_record(self) -> dict:
         return asdict(self)
 

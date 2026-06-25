@@ -7,7 +7,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List
 
 from omegaconf import OmegaConf
 
@@ -69,7 +69,9 @@ def main() -> None:
         raise SystemExit("Config must define at least one entry under `benchmarks`.")
 
     model_path = cfg["model"]
-    output_dir = args.output_dir or cfg.get("output_dir") or str(ROOT / "outputs" / "benchmark_default")
+    output_dir = (
+        args.output_dir or cfg.get("output_dir") or str(ROOT / "outputs" / "benchmark_default")
+    )
     max_samples = args.max_samples if args.max_samples is not None else common.get("max_samples")
 
     def _run() -> None:
@@ -103,7 +105,9 @@ def main() -> None:
 
     monitor_path = Path(output_dir) / "resource_monitor.json"
     if args.monitor_resources:
-        with ResourceMonitor(monitor_path, interval_s=args.monitor_interval, label="benchmark") as monitor:
+        with ResourceMonitor(
+            monitor_path, interval_s=args.monitor_interval, label="benchmark"
+        ) as monitor:
             _run()
         monitor.print_summary()
     else:

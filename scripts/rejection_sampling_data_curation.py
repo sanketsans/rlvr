@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from qwen3_rlvr.data.gsm8k import load_gsm8k
 from qwen3_rlvr.env import load_project_env
 from qwen3_rlvr.generation.rollout import generate_rollouts
+from qwen3_rlvr.logging.resource_monitor import ResourceMonitor
 from qwen3_rlvr.model.load import load_model_and_tokenizer
 from qwen3_rlvr.sft.curation import (
     append_rows_jsonl,
@@ -27,7 +28,6 @@ from qwen3_rlvr.sft.curation import (
     summarize_rows,
     write_manifest,
 )
-from qwen3_rlvr.logging.resource_monitor import ResourceMonitor
 
 load_project_env()
 
@@ -48,14 +48,22 @@ def _get(cfg: dict, *keys: str, default: Any = None) -> Any:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Curate GSM8K rejection-sampling SFT data.")
     parser.add_argument("--config", type=str, required=True)
-    parser.add_argument("--output-dir", type=str, default="/home/coder/Projects/rlvr/outputs/rejection_sampling")
-    parser.add_argument("--max-samples", type=int, default=None, help="Limit source prompts for debugging")
-    parser.add_argument("--resume", action="store_true", help="Skip prompts already in progress file")
+    parser.add_argument(
+        "--output-dir", type=str, default="/home/coder/Projects/rlvr/outputs/rejection_sampling"
+    )
+    parser.add_argument(
+        "--max-samples", type=int, default=None, help="Limit source prompts for debugging"
+    )
+    parser.add_argument(
+        "--resume", action="store_true", help="Skip prompts already in progress file"
+    )
     args = parser.parse_args()
 
     cfg = _load_config(args.config)
     curation_cfg = _get(cfg, "curation", default={}) or {}
-    output_dir = Path(args.output_dir or cfg.get("output_dir") or ROOT / "outputs" / "rejection_sampling")
+    output_dir = Path(
+        args.output_dir or cfg.get("output_dir") or ROOT / "outputs" / "rejection_sampling"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_path = cfg["model"]
@@ -67,7 +75,9 @@ def main() -> None:
     seed = int(cfg.get("seed", 42))
     dtype = curation_cfg.get("dtype", "bfloat16")
 
-    max_samples = args.max_samples if args.max_samples is not None else curation_cfg.get("max_samples")
+    max_samples = (
+        args.max_samples if args.max_samples is not None else curation_cfg.get("max_samples")
+    )
 
     top2_jsonl_path = output_dir / "top2.jsonl"
     all_correct_jsonl_path = output_dir / "all_correct.jsonl"
@@ -90,8 +100,9 @@ def main() -> None:
 
     pending: List = [ex for ex in examples if ex.example_id not in processed]
     n_easy_samples, n_medium_samples, n_hard_samples, n_very_hard_samples = 0, 0, 0, 0
-    with ResourceMonitor(output_dir / "resource_monitor.json", interval_s=10, label="rejection_sampling") as monitor:
-    
+    with ResourceMonitor(
+        output_dir / "resource_monitor.json", interval_s=10, label="rejection_sampling"
+    ) as monitor:
         for start in tqdm(range(0, len(pending), batch_size), desc="Rejection sampling"):
             batch = pending[start : start + batch_size]
             _, completions, _, _, _, _ = generate_rollouts(
@@ -168,9 +179,15 @@ def main() -> None:
     print(f"Easy samples: {n_easy_samples} ({n_easy_samples / len(examples) * 100:.2f}%)")
     print(f"Medium samples: {n_medium_samples} ({n_medium_samples / len(examples) * 100:.2f}%)")
     print(f"Hard samples: {n_hard_samples} ({n_hard_samples / len(examples) * 100:.2f}%)")
-    print(f"Very hard samples: {n_very_hard_samples} ({n_very_hard_samples / len(examples) * 100:.2f}%)")
-    print(f"Total samples: {n_easy_samples + n_medium_samples + n_hard_samples + n_very_hard_samples} ({n_easy_samples + n_medium_samples + n_hard_samples + n_very_hard_samples / len(examples) * 100:.2f}%)")
-    
+    print(
+        f"Very hard samples: {n_very_hard_samples} ({n_very_hard_samples / len(examples) * 100:.2f}%)"
+    )
+    print(
+        f"Total samples: {n_easy_samples + n_medium_samples + n_hard_samples + n_very_hard_samples} ({n_easy_samples + n_medium_samples + n_hard_samples + n_very_hard_samples / len(examples) * 100:.2f}%)"
+    )
+
     print("Rejection sampling data curation complete.")
+
+
 if __name__ == "__main__":
     main()

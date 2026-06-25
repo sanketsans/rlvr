@@ -36,3 +36,23 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "scripts", "tests"]
+
+[tool.ruff.lint]
+# Formatting-adjacent hygiene only: E/W pycodestyle, F pyflakes (unused
+# imports/vars), I import sorting. Deliberately NOT enabling pyupgrade/bugbear
+# so the RL code's explicit type annotations and idioms stay as written.
+select = ["E", "W", "F", "I"]
+# E501 (line length) is the formatter's job; E402 (import not at top) is the
+# intentional `sys.path.insert(...)` pattern in scripts/.
+ignore = ["E501", "E402"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exported names
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

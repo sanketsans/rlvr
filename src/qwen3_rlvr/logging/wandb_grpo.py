@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import wandb
 
@@ -24,7 +24,16 @@ class GRPO_WandbLogger:
             raise RuntimeError("WANDB_API_KEY is not set. Add it to rlvr/.env")
         self.run = wandb.init(project=project, name=name, entity=entity, tags=tags, config=config)
         self._samples_history = wandb.Table(
-            columns=["step", "stage", "example_id", "question", "ground_truth", "reward", "num_correct", "first_completion"]
+            columns=[
+                "step",
+                "stage",
+                "example_id",
+                "question",
+                "ground_truth",
+                "reward",
+                "num_correct",
+                "first_completion",
+            ]
         )
 
     def log_train(self, metrics: dict, step: int) -> None:
@@ -35,7 +44,16 @@ class GRPO_WandbLogger:
         wandb.log({f"eval/{k}": v for k, v in metrics.items()}, step=step)
 
     def log_samples(self, records: List[dict], step: int, stage: str) -> None:
-        columns = ["step", "stage", "example_id", "question", "ground_truth", "reward", "num_correct", "first_completion"]
+        columns = [
+            "step",
+            "stage",
+            "example_id",
+            "question",
+            "ground_truth",
+            "reward",
+            "num_correct",
+            "first_completion",
+        ]
         snapshot = wandb.Table(columns=columns)
         for row in records:
             data = (

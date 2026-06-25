@@ -48,7 +48,9 @@ def main() -> None:
         default=None,
         help="Number of GSM8K prompts per generate() call (tune with probe_batch_size.py)",
     )
-    parser.add_argument("--dtype", type=str, default=None, choices=["bfloat16", "float16", "float32"])
+    parser.add_argument(
+        "--dtype", type=str, default=None, choices=["bfloat16", "float16", "float32"]
+    )
     parser.add_argument("--method", type=str, default=None, choices=["unbiased", "first_k"])
     parser.add_argument("--output-dir", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None)
@@ -59,7 +61,9 @@ def main() -> None:
         action="store_true",
         help="Sample CPU/GPU usage during eval; writes resource_monitor.json to output-dir",
     )
-    parser.add_argument("--monitor-interval", type=float, default=2.0, help="Resource sample interval (s)")
+    parser.add_argument(
+        "--monitor-interval", type=float, default=2.0, help="Resource sample interval (s)"
+    )
     args = parser.parse_args()
 
     cfg = _load_config(args.config)
@@ -78,17 +82,23 @@ def main() -> None:
     if n_generations < max(k_values):
         raise SystemExit(f"--n-generations must be >= max(k)={max(k_values)}")
 
-    output_dir = args.output_dir or cfg.get("output_dir") or str(ROOT / "outputs" / "pass_at_k_default")
+    output_dir = (
+        args.output_dir or cfg.get("output_dir") or str(ROOT / "outputs" / "pass_at_k_default")
+    )
     monitor_path = Path(output_dir) / "resource_monitor.json"
 
     def _run_eval():
         return evaluate_pass_at_k(
             model_path=model_path,
             split=args.split or dataset_cfg.get("split", "test"),
-            max_samples=args.max_samples if args.max_samples is not None else dataset_cfg.get("max_samples"),
+            max_samples=args.max_samples
+            if args.max_samples is not None
+            else dataset_cfg.get("max_samples"),
             k_values=k_values,
             n_generations=n_generations,
-            temperature=args.temperature if args.temperature is not None else passk_cfg.get("temperature", 0.7),
+            temperature=args.temperature
+            if args.temperature is not None
+            else passk_cfg.get("temperature", 0.7),
             max_new_tokens=args.max_new_tokens or passk_cfg.get("max_new_tokens", 512),
             dtype=args.dtype or passk_cfg.get("dtype", "bfloat16"),
             seed=args.seed if args.seed is not None else cfg.get("seed", 42),
@@ -97,7 +107,9 @@ def main() -> None:
         )
 
     if args.monitor_resources:
-        with ResourceMonitor(monitor_path, interval_s=args.monitor_interval, label="pass_at_k") as monitor:
+        with ResourceMonitor(
+            monitor_path, interval_s=args.monitor_interval, label="pass_at_k"
+        ) as monitor:
             result = _run_eval()
         monitor.print_summary()
     else:
@@ -118,7 +130,8 @@ def main() -> None:
         log_pass_at_k_to_wandb(
             result=result,
             project=wandb_cfg["project"],
-            name=args.wandb_expt_name or wandb_cfg.get("name", "pass_at_k") + f"_max_samples_{args.max_samples}",
+            name=args.wandb_expt_name
+            or wandb_cfg.get("name", "pass_at_k") + f"_max_samples_{args.max_samples}",
             entity=wandb_cfg.get("entity"),
             tags=wandb_cfg.get("tags"),
         )

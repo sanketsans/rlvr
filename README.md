@@ -1,5 +1,7 @@
 # RLVR Training Lab
 
+[![CI](https://github.com/sanketsans/rlvr/actions/workflows/ci.yml/badge.svg)](https://github.com/sanketsans/rlvr/actions/workflows/ci.yml)
+
 A compact, **hackable training pipeline for Reinforcement Learning from Verifiable
 Rewards (RLVR)** on instruction-tuned LLMs, using GSM8K math word problems as the
 verifiable task. It implements two policy-gradient algorithms — **REINFORCE** and
@@ -169,12 +171,16 @@ Under `<output-dir>/`:
 | `scripts/launch_phase1_sweep.py` | Launch a hyperparameter sweep over Phase 1 runs |
 | `scripts/rejection_sampling_data_curation.py` | Curate SFT data by rejection sampling |
 
-## Tests
+## Tests & CI
 
 ```bash
 pip install -e ".[dev]"
-pytest
+ruff check . && ruff format --check .   # lint + formatting
+pytest -q                               # unit tests
 ```
+
+Every PR into `main` runs these via [GitHub Actions](.github/workflows/ci.yml) and must
+pass before merging. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local workflow.
 
 ## Roadmap
 

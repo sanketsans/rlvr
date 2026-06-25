@@ -1,12 +1,13 @@
 import logging
 import sys
 
+
 def setup_logger(
     name: str = "qwen3_rlvr",
     level: int = logging.INFO,
     fmt: str = "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
     datefmt: str = "%Y-%m-%d %H:%M:%S",
-    stream = sys.stdout,
+    stream=sys.stdout,
 ) -> logging.Logger:
     """
     Set up a consistent logger to be used in place of print statements.
@@ -26,6 +27,7 @@ def setup_logger(
         logger.addHandler(handler)
     logger.propagate = False
     return logger
+
 
 # Prefer this pattern everywhere:
 # logger = setup_logger(__name__)

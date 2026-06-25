@@ -35,4 +35,6 @@ def evaluate_gsm8k_quick(
         seed=seed,
         question_batch_size=question_batch_size,
     )
-    return {k: v for k, v in result.items() if k not in {"recipe", "by_source", "k_values", "method"}}
+    return {
+        k: v for k, v in result.items() if k not in {"recipe", "by_source", "k_values", "method"}
+    }

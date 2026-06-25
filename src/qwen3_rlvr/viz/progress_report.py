@@ -48,9 +48,15 @@ def build_progress_report(samples_path: Path, output_path: Path, per_stage: int 
             reward = row.get("reward", 0)
             reward_cls = "good" if reward >= 1 else "bad"
             parts.append("<div class='card'>")
-            parts.append(f"<div>step {row.get('step')} · reward <span class='{reward_cls}'>{reward}</span></div>")
-            parts.append(f"<div class='q'><b>Q:</b> {html.escape(str(row.get('question', '')))}</div>")
-            parts.append(f"<div class='gt'><b>GT:</b> {html.escape(str(row.get('ground_truth', '')))}</div>")
+            parts.append(
+                f"<div>step {row.get('step')} · reward <span class='{reward_cls}'>{reward}</span></div>"
+            )
+            parts.append(
+                f"<div class='q'><b>Q:</b> {html.escape(str(row.get('question', '')))}</div>"
+            )
+            parts.append(
+                f"<div class='gt'><b>GT:</b> {html.escape(str(row.get('ground_truth', '')))}</div>"
+            )
             parts.append(f"<pre>{html.escape(str(row.get('completion', '')))}</pre>")
             parts.append("</div>")
 
