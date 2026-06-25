@@ -1,8 +1,8 @@
 # Phase 0 — benchmark suite (greedy + best-of-n) across eval recipes
-# Override paths via env: MODEL_PATH, OUT_ROOT
+# Default model: Qwen2.5-0.5B-Instruct. Override paths via env: MODEL_PATH, OUT_ROOT
 
-model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/benchmark_baseline
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}/benchmark_baseline
 
 common:
   max_samples: null  # null = full recipe; set e.g. 100 for quick smoke test

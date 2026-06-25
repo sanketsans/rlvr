@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 1: GRPO training on GSM8K."""
+"""Phase 1: policy-gradient training on GSM8K.
+
+Runs REINFORCE or GRPO depending on `grpo.reinforce` in the config:
+  reinforce: true  -> ReinforceTrainer (group-normalized advantages only)
+  reinforce: false -> GRPOTrainer (clipped ratio + KL to a frozen reference)
+"""
 
 from __future__ import annotations
 
@@ -129,17 +134,15 @@ def main() -> None:
         ),
     )
 
-    logger.info(f"Training GRPO: {trainer_cfg.model_path}")
+    logger.info(f"Training {'REINFORCE' if trainer_cfg.reinforce else 'GRPO'}: {trainer_cfg.model_path}")
     logger.info(f"Output: {trainer_cfg.output_dir}")
-    # if args.monitor_resources:
+    # Wrap training in a resource monitor; it always writes resource_monitor.json.
     with ResourceMonitor(trainer_cfg.output_dir + "/resource_monitor.json", interval_s=args.monitor_interval, label="grpo") as monitor:
         if trainer_cfg.reinforce:
             ReinforceTrainer(trainer_cfg).train()
         else:
             GRPOTrainer(trainer_cfg).train()
     monitor.print_summary()
-    # else:
-    #     GRPOTrainer(trainer_cfg).train()
     logger.info("Training complete.")
 
 
