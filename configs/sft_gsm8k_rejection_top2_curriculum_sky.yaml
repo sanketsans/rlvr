@@ -1,8 +1,8 @@
 # SFT with curriculum learning on GSM8K rejection-sampling data
 # Uses processed_prompt_ids.txt success_ratio buckets: easy / mid / hard
 
-model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}
 
 dataset:
   manifest: /workspace/sanketthakur/Projects/rlvr/data/rejection_sampling/manifest.json

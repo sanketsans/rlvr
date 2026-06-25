@@ -5,8 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qwen3-rlvr"
 version = "0.1.0"
-description = "RLVR learning lab for Qwen3-4B-Instruct (GRPO on GSM8K and beyond)"
+description = "RLVR training pipeline for Qwen (REINFORCE / GRPO on GSM8K and beyond)"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
     "numpy",

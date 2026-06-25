@@ -1,18 +1,18 @@
 # SFT with curriculum learning on GSM8K rejection-sampling data
 # Uses processed_prompt_ids.txt success_ratio buckets: easy / mid / hard
 
-model: ${oc.env:MODEL_PATH,/home/coder/Projects/rlvr/models/Qwen2.5-0.5B-Instruct}
-output_dir: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/outputs}/sft_gsm8k_rejection_top2_curriculum
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}/sft_gsm8k_rejection_top2_curriculum
 
 dataset:
-  manifest: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/data}/rejection_sampling/manifest.json
+  manifest: ${oc.env:OUT_ROOT,./data}/rejection_sampling/manifest.json
   variant: top2
   include_original: true
   original_split: train
-  processed_prompt_ids_path: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/data}/rejection_sampling/processed_prompt_ids.txt
+  processed_prompt_ids_path: ${oc.env:OUT_ROOT,./data}/rejection_sampling/processed_prompt_ids.txt
   curriculum:
     enabled: true
-    processed_prompt_ids_path: ${oc.env:OUT_ROOT,/home/coder/Projects/rlvr/data}/rejection_sampling/processed_prompt_ids.txt
+    processed_prompt_ids_path: ${oc.env:OUT_ROOT,./data}/rejection_sampling/processed_prompt_ids.txt
     steps_per_phase: null
     phases:
       - {easy: 0.8, mid: 0.2, hard: 0.0, very_hard: 0.0}

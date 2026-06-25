@@ -12,19 +12,6 @@ from qwen3_rlvr.model.load import LoadedModel
 from qwen3_rlvr.rl.grpo import batched_sequence_log_probs, batched_tokenize_prompt_completion
 
 
-def _decode_generated_batch(tokenizer, outputs, prompt_len, batch_size, n_generations):
-    """Decode a flat ``generate()`` output tensor into per-prompt completion lists.
-
-    ``outputs`` has shape ``(batch_size * n_generations, seq_len)``; the first
-    ``prompt_len`` tokens are the prompt and are stripped before decoding. The
-    flat list of decoded strings is then regrouped so result[i] holds the
-    ``n_generations`` completions for prompt ``i``.
-    """
-    completion_ids = outputs[:, prompt_len:]
-    decoded = tokenizer.batch_decode(completion_ids, skip_special_tokens=True)
-    return [decoded[i * n_generations : (i + 1) * n_generations] for i in range(batch_size)]
-
-
 def generate_rollouts(
     loaded: LoadedModel,
     examples: Sequence[VerifiableExample],
@@ -85,10 +72,16 @@ def generate_rollouts(
         model.train()
 
     batch_size = len(prompts)
-    all_completions = _decode_generated_batch(
-        tokenizer, outputs, prompt_len, batch_size, n_generations
+    completion_ids = outputs[:, prompt_len:]
+    decoded = tokenizer.batch_decode(
+        completion_ids,
+        skip_special_tokens=True,
     )
-    del outputs
+    del outputs, completion_ids
+
+    all_completions = [
+        decoded[i * n_generations : (i + 1) * n_generations] for i in range(batch_size)
+    ]
 
     if not tokenize_outputs:
         return prompts, all_completions, None, None, None, None

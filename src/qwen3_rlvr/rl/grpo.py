@@ -16,7 +16,7 @@ from torch.nn.utils.rnn import pad_sequence
 class GRPOBatch:
     rewards: torch.Tensor  # [B, N_generations]
     advantages: torch.Tensor  # [B, N_generations]
-    old_token_logp: torch.Tensor  # [B*N_generations, L_prompt + L_completion - 1] # because they are shifted by 1 since causal.
+    old_token_logp: torch.Tensor  # [B*N_generations, L-1]; causal shift drops one position
     tokenized_input_ids: torch.Tensor  # [B*N_generations, L_prompt + L_completion]
     tokenized_attention_mask: torch.Tensor  # [B*N_generations, L_prompt + L_completion]
     tokenized_completion_mask: torch.Tensor  # [B*N_generations, L_prompt + L_completion]
@@ -37,12 +37,10 @@ def batched_tokenize_prompt_completion(
     completions: List[List[str]],
     device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    # was previosly doing the full text (prompt + completion) tokenization
-    # that can cause issues, since BPE tokenization works with neighboring tokens.
-    # so, if we combined prompts + completions, the prefix/ suffix tokens of completions and prompts respectively would be tokenized differently.
-    # this is not desired, since we want to compute the log-probs for the completion tokens only.
-    # so, we tokenize the prompt and completion separately, and then combine them.
-    # this ensures that the prefix/ suffix tokens of completions and prompts respectively are tokenized the same.
+    # Tokenize prompt and completion separately, then concatenate the token ids.
+    # Tokenizing the joined string instead would let BPE merge tokens across the
+    # prompt/completion boundary, shifting which tokens belong to the completion
+    # and corrupting the per-completion log-probs we compute downstream.
     tokenizer.padding_side = "right"
     prompts = np.repeat(prompts, len(completions[0]), axis=0).tolist()
     completions = np.concatenate(
@@ -84,27 +82,21 @@ def batched_sequence_log_probs(
     tokenized_attention_mask,
     tokenized_completion_mask,
 ) -> torch.Tensor:
-    """Per-sequence sum of log-probs over completion tokens. Returns shape [B]."""
-    # outputs: logits for all tokens in the input_ids - policy gradient should happen on prompt + completion tokens, not just on completion tokens
-    # attention mask : 1 denotes to be included in the log-probs, 0 denotes to be ignored. But shape of output remain same as input_ids.
+    """Per-token log-probs over the sequence, zeroed outside completion tokens.
+
+    Returns shape [B, L-1]: the log-prob the model assigns to each next token.
+    """
     outputs = model(input_ids=tokenized_input_ids, attention_mask=tokenized_attention_mask)
-    logits = outputs.logits[
-        :, :-1, :
-    ]  # logits for all tokens in the input_ids - policy gradient should happen on prompt + completion tokens, not just on completion tokens
-    targets = tokenized_input_ids[:, 1:]  # targets are shifted by 1 since causal.
+    # Causal shift: logits at position t predict the token at position t+1, so we
+    # drop the last logit and the first input id to line predictions up with targets.
+    logits = outputs.logits[:, :-1, :]
+    targets = tokenized_input_ids[:, 1:]
     log_probs = F.log_softmax(logits, dim=-1)
     token_log_probs = log_probs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
-    # Typically, tokenized_completion_mask[:, 1:] is used to ignore the first token (which may be a BOS token or start of the completion),
-    # but whether you need to do this depends on what logprobs and masks represent in your specific pipeline.
-    # If you want to apply 'valid_mask' to select only those tokens that are actually part of the completion,
-    # dropping the initial token may be necessary (for autoregressive models, the first token's logprob may be undefined).
-    # If unsure, consider inspecting shapes and intended downstream usage.
-    tokenizer_completion_mask = tokenized_completion_mask[
-        :, 1:
-    ]  # [n_prompts * n_generations, n_tokens_in_completion]
-    return (
-        token_log_probs * tokenizer_completion_mask
-    )  # [n_prompts * n_generations, n_tokens_in_completion]
+    # Slice the completion mask the same way so it aligns with the shifted targets,
+    # then zero out prompt tokens — only completion tokens carry gradient.
+    tokenizer_completion_mask = tokenized_completion_mask[:, 1:]  # [B, L-1]
+    return token_log_probs * tokenizer_completion_mask  # [B, L-1]
 
 
 def compute_policy_loss(
@@ -132,8 +124,7 @@ def compute_policy_loss(
             "kl_mean": 0.0,
         }
 
-    # since tokens probs only on the logs
-    # shape is [B*N_generations, L_prompt + L_completion - 1]
+    # Per-token log-probs under the current policy; shape [B*N, L-1].
     policy_token_logp = batched_sequence_log_probs(
         policy, tokenized_input_ids, tokenized_attention_mask, tokenized_completion_mask
     )
@@ -157,20 +148,16 @@ def compute_policy_loss(
 
         reference_token_logp = reference_token_logp[active_advantage_mask].float()
 
-    # PPO ratio
-
-    # TODO: check the shapes here
+    # PPO-style clipped surrogate, per token. advantages -> [N, 1] to broadcast over length.
     advantages = advantages.unsqueeze(-1)
-    # only valid tokens contribute
-    # Typically, tokenized_completion_mask[:, 1:] to align with token log probs shape.
-    # since we are only optimizing for next-token. current completion mask is for all the tokens.
-    # that's why we move by 1 to match the shape of token log probs.
+    # Slice the completion mask by [:, 1:] to match the causal-shifted log-prob length,
+    # so only completion tokens contribute to the loss.
     valid_mask = tokenized_completion_mask[:, 1:].float()[active_advantage_mask]
     ratio = torch.exp(policy_token_logp - old_token_logp)
     clip_adv = torch.clamp(ratio, 1 - clip_eps, 1 + clip_eps) * advantages
     pg_token_loss = -torch.min(ratio * advantages, clip_adv)
 
-    # Deepseek GRPO objective
+    # KL penalty to the frozen reference (DeepSeek GRPO's k3 estimator).
     delta = reference_token_logp - policy_token_logp
     kl = torch.exp(delta) - delta - 1
 

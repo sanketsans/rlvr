@@ -26,8 +26,7 @@ def load_math(
     seed: int = 42,
 ) -> List[VerifiableExample]:
     parts = [
-        load_dataset("EleutherAI/hendrycks_math", subject, split=split)
-        for subject in MATH_SUBJECTS
+        load_dataset("EleutherAI/hendrycks_math", subject, split=split) for subject in MATH_SUBJECTS
     ]
     dataset = concatenate_datasets(parts)
     if max_samples is not None and max_samples < len(dataset):
