@@ -23,6 +23,7 @@ dependencies = [
     "huggingface_hub",
     "psutil",
     "python-dotenv",
+    "pyarrow",
 ]
 
 [project.optional-dependencies]

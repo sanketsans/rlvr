@@ -13,6 +13,7 @@ from typing import Any, List, Optional
 import numpy as np
 import torch
 from torch.optim import AdamW
+from tqdm import tqdm
 
 from qwen3_rlvr.data.base import VerifiableExample
 from qwen3_rlvr.data.recipe import load_dataset_by_name, load_recipe
@@ -26,8 +27,6 @@ from qwen3_rlvr.rewards.exact_match import exact_match_rewards
 from qwen3_rlvr.rl.grpo import GRPOBatch, compute_advantages, compute_policy_loss
 
 logger = setup_logger(__name__)
-
-from tqdm import tqdm
 
 
 @dataclass
@@ -402,12 +401,20 @@ class GRPOTrainer(Trainer):
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            step_metrics.update(
-                {
-                    "loss": np.mean(grpo_epoch_metrics["loss"]).item(),
-                    **{f"loss/{k}": np.mean(v).item() for k, v in grpo_epoch_metrics.items()},
-                }
-            )
+            if grpo_epoch_metrics["loss"]:
+                step_metrics.update(
+                    {
+                        "num_updates": len(grpo_epoch_metrics["loss"]),
+                        "loss": float(np.mean(grpo_epoch_metrics["loss"])),
+                        **{f"loss/{k}": float(np.mean(v)) for k, v in grpo_epoch_metrics.items()},
+                    }
+                )
+            else:
+                # Every epoch was skipped: all group advantages were ~0 (uniform
+                # rewards within groups), so no policy update was applied. Record
+                # that explicitly rather than calling np.mean([]), which emits a
+                # "Mean of empty slice" RuntimeWarning and yields NaN.
+                step_metrics.update({"num_updates": 0, "loss": float("nan")})
             metrics_history.append(step_metrics)
             self.log_samples(cfg, step_metrics, step, batch, completions, grpo_batch)
 

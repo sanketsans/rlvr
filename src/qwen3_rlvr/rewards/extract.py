@@ -98,6 +98,10 @@ def answers_match(prediction: str, reference: str) -> bool:
     """Return True when extracted prediction matches a canonical reference answer."""
     pred = extract_answer(prediction)
     ref = reference.strip()
+    # References usually arrive already canonical, but some callers pass raw
+    # "#### <answer>" text; strip that marker so the answer normalizes cleanly.
+    if "####" in ref:
+        ref = ref.split("####")[-1].strip()
 
     pred_norm = _normalize_numeric(pred)
     ref_norm = _normalize_numeric(ref)
