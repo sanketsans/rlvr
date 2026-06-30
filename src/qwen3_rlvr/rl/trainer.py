@@ -273,9 +273,6 @@ class ReinforceTrainer(Trainer):
             loss, loss_metrics = compute_policy_loss(
                 policy=self.policy.model,
                 reference=self.reference.model,
-                tokenized_input_ids=tokenized_input_ids,
-                tokenized_attention_mask=tokenized_attention_mask,
-                tokenized_completion_mask=tokenized_completion_mask,
                 grpo_batch=grpo_batch,
                 reinforce=cfg.reinforce,
             )
@@ -429,3 +426,4 @@ class GRPOTrainer(Trainer):
 
         if self.wandb is not None:
             self.wandb.finish()
+

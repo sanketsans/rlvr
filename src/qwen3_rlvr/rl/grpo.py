@@ -16,10 +16,13 @@ from torch.nn.utils.rnn import pad_sequence
 class GRPOBatch:
     rewards: torch.Tensor  # [B, N_generations]
     advantages: torch.Tensor  # [B, N_generations]
-    old_token_logp: torch.Tensor  # [B*N_generations, L-1]; causal shift drops one position
-    tokenized_input_ids: torch.Tensor  # [B*N_generations, L_prompt + L_completion]
-    tokenized_attention_mask: torch.Tensor  # [B*N_generations, L_prompt + L_completion]
-    tokenized_completion_mask: torch.Tensor  # [B*N_generations, L_prompt + L_completion]
+    tokenized_input_ids: Optional[torch.Tensor]  # [B*N_generations, L_prompt + L_completion]
+    tokenized_attention_mask: Optional[torch.Tensor]  # [B*N_generations, L_prompt + L_completion]
+    tokenized_completion_mask: Optional[torch.Tensor]  # [B*N_generations, L_prompt + L_completion]
+    # Optional: not set by the RFT trainer, which does not compute old log-probs.
+    old_token_logp: Optional[torch.Tensor] = (
+        None  # [B*N_generations, L-1]; causal shift drops one position
+    )
 
 
 def compute_advantages(rewards: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
@@ -86,13 +89,20 @@ def batched_sequence_log_probs(
 
     Returns shape [B, L-1]: the log-prob the model assigns to each next token.
     """
-    outputs = model(input_ids=tokenized_input_ids, attention_mask=tokenized_attention_mask)
+    outputs = model(
+        input_ids=tokenized_input_ids,
+        attention_mask=tokenized_attention_mask,
+    )
     # Causal shift: logits at position t predict the token at position t+1, so we
     # drop the last logit and the first input id to line predictions up with targets.
-    logits = outputs.logits[:, :-1, :]
+    # Upcast the LM-head logits to fp32 before the softmax. Following the Kimi K
+    # report, computing the final logits/log-softmax in fp32 avoids the bf16 rounding
+    # over the large vocab that biases per-token log-probs and  breakpoint()  # inspect outputs.logits dtype here: compare .float() vs raw fp16 head
+    logits = outputs.logits[:, :-1, :].float()
     targets = tokenized_input_ids[:, 1:]
     log_probs = F.log_softmax(logits, dim=-1)
     token_log_probs = log_probs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+
     # Slice the completion mask the same way so it aligns with the shifted targets,
     # then zero out prompt tokens — only completion tokens carry gradient.
     tokenizer_completion_mask = tokenized_completion_mask[:, 1:]  # [B, L-1]
@@ -104,13 +114,17 @@ def compute_policy_loss(
     reference: nn.Module,
     grpo_batch: GRPOBatch,
     tokenizer: Optional[Any] = None,
-    kl_coef: Optional[float] = 0.02,
+    kl_coef: float = 0.02,
     reinforce: bool = False,
     clip_eps: float = 0.2,
 ) -> tuple[torch.Tensor, dict]:
     """Aggregate GRPO loss over all question-completion pairs."""
     policy.train()
     reference.eval()
+    assert grpo_batch.old_token_logp is not None
+    assert grpo_batch.tokenized_attention_mask is not None
+    assert grpo_batch.tokenized_completion_mask is not None
+    assert grpo_batch.tokenized_input_ids is not None
     tokenized_input_ids = grpo_batch.tokenized_input_ids
     tokenized_attention_mask = grpo_batch.tokenized_attention_mask
     tokenized_completion_mask = grpo_batch.tokenized_completion_mask
@@ -139,7 +153,6 @@ def compute_policy_loss(
             "policy_logp_mean": sequence_log_probs.mean().item(),
             "advantage_mean": advantages.mean().item(),
         }
-
     old_token_logp = grpo_batch.old_token_logp[active_advantage_mask].float()
     with torch.no_grad():
         reference_token_logp = batched_sequence_log_probs(

@@ -1,0 +1,51 @@
+# Tiny CPU/MPS debug config for stepping through GRPO in a debugger.
+# Everything is shrunk so you reach the rollout/log-prob path (grpo.py) in seconds,
+# not minutes. Not for real training — see phase1_rlvr_gsm8k_grpo.yaml for that.
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}/debug_grpo_cpu
+
+dataset:
+  name: gsm8k
+  split: train
+  max_samples: 4
+
+grpo:
+  reinforce: false
+  max_steps: 1            # one training step is enough to hit the breakpoint
+  batch_size: 1
+  grad_accum_steps: 1
+  n_generations: 2        # >1 so a group exists; tiny so it's fast
+  lr: 1.0e-6
+  kl_coef: 0.04
+  temperature: 0.7
+  max_new_tokens: 24      # short completions = fast CPU generation
+  grad_clip: 1.0
+  dtype: bfloat16
+  save_every_steps: 1000
+  grpo_epochs: 1
+
+reward:
+  type: exact_match
+  extract: gsm8k_hash
+
+eval:
+  every_steps: 1000       # effectively skip periodic eval; step-0 eval still runs
+  dataset: gsm8k
+  split: test
+  max_samples: 2          # keep the unavoidable step-0 eval tiny
+  max_new_tokens: 16
+  n_generations: 1
+  eval_batch_size: 2
+  k: [1]
+
+logging:
+  log_every_steps: 1
+  log_samples_every: 1000
+  sample_table_size: 2
+  wandb:
+    project: rlvr
+    entity: ${oc.env:WANDB_ENTITY,null}
+    name: debug_grpo_cpu
+    tags: [debug]
+
+seed: 42

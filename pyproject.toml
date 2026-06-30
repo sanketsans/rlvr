@@ -33,6 +33,7 @@ eval = [
 dev = [
     "pytest",
     "ruff",
+    "debugpy",
 ]
 
 [tool.setuptools.packages.find]

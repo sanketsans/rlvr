@@ -8,6 +8,10 @@ __pycache__/
 models/
 wandb/
 skypilot/
-docs/
-experiments/
-data/
+# Anchor project-root dirs with a leading slash so they don't also match
+# same-named source packages (e.g. src/qwen3_rlvr/data/) — an unanchored
+# `data/` matches at ANY depth and was excluding the data package from
+# SkyPilot's workdir sync, causing `ModuleNotFoundError: qwen3_rlvr.data`.
+/docs/
+/experiments/
+/data/
