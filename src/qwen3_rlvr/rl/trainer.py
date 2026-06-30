@@ -426,4 +426,3 @@ class GRPOTrainer(Trainer):
 
         if self.wandb is not None:
             self.wandb.finish()
-
