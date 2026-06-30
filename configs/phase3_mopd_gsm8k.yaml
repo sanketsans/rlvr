@@ -1,0 +1,73 @@
+# Phase 3 — MOPD (Multi-teacher On-Policy Distillation) on GSM8K
+# Dense token-level reverse-KL: student rolls out, frozen teacher(s) score the
+# SAME tokens, advantage = sg[log π_T − log π_prox]. See src/qwen3_rlvr/rl/mopd.py.
+#
+# Override paths via env: MODEL_PATH (student), TEACHER_PATH, OUT_ROOT.
+#
+# IMPORTANT (single-dataset caveat): MOPD only helps if the teacher is genuinely
+# stronger than the student on THIS data. The natural single-dataset choice is
+# your best RLVR/GRPO checkpoint as the teacher (caveat A in mopd.py). If your
+# only "teacher" is the base model, run phase1 GRPO instead — MOPD adds teacher
+# forward passes for ~no signal.
+
+model: ${oc.env:MODEL_PATH,./models/Qwen2.5-0.5B-Instruct}
+output_dir: ${oc.env:OUT_ROOT,./outputs}/qwen2.5-0.5b-instruct_p3_mopd_gsm8k
+
+dataset:
+  name: gsm8k
+  recipe: gsm8k_train
+  split: train
+  max_samples: null  # null = full train set; set 500 for a quick debug run
+
+mopd:
+  # --- teacher(s) ---
+  # One path = plain on-policy distillation. Multiple paths = λ-weighted merge.
+  # Point this at a STRONGER checkpoint (e.g. your phase1 GRPO output).
+  teacher_paths:
+    - ${oc.env:TEACHER_PATH,./outputs/qwen2.5-0.5b-instruct_rlvr_p1_grpo_gsm8k_grpo/checkpoints/step_50}
+  teacher_weights: null     # null = uniform λ; else list summing to anything (normalized)
+
+  # --- objective knobs ---
+  clip_eps: 0.2             # PPO-style ratio clip around the proximal policy
+  normalize_advantages: false  # whiten per-token Â_t over completion tokens (stability)
+  adv_clip: null            # e.g. 5.0 to clamp |Â_t| against pathological log-ratios
+  verifier_coef: 0.0        # >0 ⇒ hybrid: add group-normalized exact-match advantage (caveat C)
+  mopd_epochs: 1            # PPO-style inner epochs per rollout batch
+
+  # --- optimization / rollout (mirrors grpo block) ---
+  max_steps: 50
+  batch_size: 4             # questions per micro-batch
+  grad_accum_steps: 1
+  n_generations: 8          # completions per question (student rollouts)
+  lr: 1.0e-6
+  temperature: 0.7
+  max_new_tokens: 512
+  grad_clip: 1.0
+  dtype: bfloat16
+  save_every_steps: 50
+
+reward:
+  type: exact_match         # used for logging (and the hybrid term if verifier_coef>0)
+  extract: gsm8k_hash
+
+eval:
+  every_steps: 350
+  dataset: gsm8k
+  split: test
+  max_samples: null
+  max_new_tokens: 512
+  n_generations: 5
+  eval_batch_size: 32
+  k: [1, 3, 5]
+
+logging:
+  log_every_steps: 5
+  log_samples_every: 50
+  sample_table_size: 5
+  wandb:
+    project: rlvr
+    entity: ${oc.env:WANDB_ENTITY,null}
+    name: qwen2.5-0.5b-instruct_p3_mopd_gsm8k
+    tags: [phase3, gsm8k, mopd, distillation, qwen2.5-0.5b-instruct]
+
+seed: 42
