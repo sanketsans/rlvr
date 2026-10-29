@@ -85,7 +85,7 @@ def test_single_completion_token_loss_and_backward(normalize):
         tokenized_attention_mask=attention,
         tokenized_completion_mask=completion,
         behavior_token_logp=behavior,
-        teacher_token_logp=behavior + 2.0,
+        teacher_token_logp=behavior + 0.5,
     )
 
     loss, metrics = compute_mopd_loss(policy, batch, normalize_advantages=normalize)
@@ -98,7 +98,7 @@ def test_single_completion_token_loss_and_backward(normalize):
         assert loss.item() == 0.0
         assert torch.equal(policy.logits.grad, torch.zeros(3))
     else:
-        assert loss.item() == -2.0
+        assert loss.item() == -0.5
         torch.testing.assert_close(
-            policy.logits.grad, torch.tensor([2.0 / 3.0, 2.0 / 3.0, -4.0 / 3.0])
+            policy.logits.grad, torch.tensor([1.0 / 6.0, 1.0 / 6.0, -1.0 / 3.0])
         )
