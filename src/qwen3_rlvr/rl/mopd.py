@@ -208,7 +208,11 @@ def compute_token_advantages(
         m = valid_mask.bool()
         if m.any():
             vals = advantages[m]
-            advantages = (advantages - vals.mean()) / (vals.std() + eps)
+            if vals.numel() == 1:
+                # A centered singleton is zero; its sample std is undefined.
+                advantages = torch.zeros_like(advantages)
+            else:
+                advantages = (advantages - vals.mean()) / (vals.std() + eps)
             advantages = advantages * valid_mask  # re-zero non-completion tokens
 
     if adv_clip is not None:
